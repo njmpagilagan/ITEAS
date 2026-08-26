@@ -218,11 +218,23 @@
 ------------------------------------------------------ */
 const SUPABASE_URL = 'https://yoxfgwjcqlnmqnimapfz.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_YVDbO7XMFH5CZB5LHcZabw_y-DuAEvU';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let supabase = null;
+let SUPABASE_CONFIGURED = true;
+try{
+  if(!SUPABASE_URL || !SUPABASE_ANON_KEY || SUPABASE_URL.includes('YOUR_') || SUPABASE_ANON_KEY.includes('YOUR_')){
+    SUPABASE_CONFIGURED = false;
+  } else {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+}catch(e){
+  SUPABASE_CONFIGURED = false;
+  console.error('Supabase client failed to initialize — check SUPABASE_URL/SUPABASE_ANON_KEY.', e);
+}
 
 /* ---------------- storage helpers ---------------- */
 const EMPTY_DEFAULTS = { users:{}, events:[], tokens:{}, attendance:[], departments:[] };
 async function loadAll(){
+  if(!SUPABASE_CONFIGURED) return { ...EMPTY_DEFAULTS };
   const out = { ...EMPTY_DEFAULTS };
   try{
     const { data, error } = await supabase.from('app_storage').select('key,value');
@@ -234,12 +246,14 @@ async function loadAll(){
   return out;
 }
 async function saveKey(key, value){
+  if(!SUPABASE_CONFIGURED) return;
   try{
     const { error } = await supabase.from('app_storage').upsert({ key, value, updated_at: new Date().toISOString() });
     if(error) throw error;
   }catch(e){ console.error('Supabase save failed', key, e); }
 }
 async function fetchKey(key, fallback){
+  if(!SUPABASE_CONFIGURED) return fallback;
   try{
     const { data, error } = await supabase.from('app_storage').select('value').eq('key', key).maybeSingle();
     if(error) throw error;
@@ -1047,8 +1061,30 @@ function attachAdminHandlers(){
 }
 
 /* ---------------- init ---------------- */
+function renderSetupNeeded(){
+  return `
+  <div class="center-screen">
+    <div class="auth-shell">
+      <div class="seal">SAS</div>
+      <div class="card">
+        <h2 style="margin-top:0;">Backend not connected yet</h2>
+        <p style="color:var(--ink-soft); font-size:13.5px; line-height:1.6;">
+          This app needs a Supabase project before it can run. Open this HTML file, find
+          <span class="mono">SUPABASE_URL</span> and <span class="mono">SUPABASE_ANON_KEY</span>
+          near the top of the <span class="mono">&lt;script&gt;</span> section, and paste in your
+          project's values from Supabase → Settings → API.
+        </p>
+        <p style="color:var(--ink-soft); font-size:13.5px;">See <strong>DEPLOYMENT-GUIDE.md</strong> for the full step-by-step setup.</p>
+      </div>
+    </div>
+  </div>`;
+}
 (async function init(){
   document.getElementById('app').innerHTML = `<div class="center-screen"><p style="color:var(--ink-soft);">Loading…</p></div>`;
+  if(!SUPABASE_CONFIGURED){
+    document.getElementById('app').innerHTML = renderSetupNeeded();
+    return;
+  }
   await seedIfEmpty();
   render();
 })();
