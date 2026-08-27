@@ -92,7 +92,7 @@ async function seedIfEmpty(){
   DB = await loadAll();
   let usersChanged = false, deptsChanged = false;
   if(!DB.users['sas-admin']){
-    DB.users['sas-admin'] = {id:'sas-admin', role:'admin', name:'SAS Office', username:'sas-admin', passwordHash:hashPw('ChangeMe123')};
+    DB.users['sas-admin'] = {id:'sas-admin', role:'admin', name:'System Admin', username:'sas-admin', passwordHash:hashPw('ChangeMe123')};
     usersChanged = true;
   }
   if(!DB.departments || DB.departments.length===0){
@@ -118,12 +118,19 @@ function renderLogin(){
   const isAdminPage = (typeof PAGE_MODE !== 'undefined' && PAGE_MODE === 'admin');
   const tab = isAdminPage ? 'admin' : (state.authTab === 'admin' ? 'student' : state.authTab);
   return `
-  <div class="center-screen">
-    <div class="auth-shell">
-      <div class="seal">SAS</div>
-      <h1 style="text-align:center; margin:0 0 6px 0; font-size:22px;">${isAdminPage ? 'SAS Office Portal' : 'Event Attendance &amp; Evaluation'}</h1>
-      <p style="text-align:center; color:var(--ink-soft); font-size:13.5px; margin:0 0 24px 0;">${isAdminPage ? 'Restricted access — SAS office staff only.' : 'Sign in to check in or run a department desk.'}</p>
-      <div class="card">
+  <div class="login-wrap">
+    <div class="login-hero">
+      <div class="hero-watermark" aria-hidden="true">AS</div>
+      <div class="login-hero-inner">
+        <div class="seal-lg">AS</div>
+        <h1 class="login-title">Attendance System</h1>
+        <p class="login-tagline">${isAdminPage ? 'System admin portal' : 'One scan in, one scan out — every event, on record.'}</p>
+      </div>
+    </div>
+    <div class="login-form-panel">
+      <div class="login-form-inner">
+        <h2 class="form-heading">${isAdminPage ? 'Admin sign in' : 'Sign in'}</h2>
+        <p class="form-sub">${isAdminPage ? 'Restricted access — system admin only.' : 'Check in to an event, or open your department desk.'}</p>
         ${isAdminPage ? '' : `
         <div class="auth-tabs">
           <div class="auth-tab ${tab==='student'?'active':''}" data-tab="student">Student</div>
@@ -160,18 +167,18 @@ function renderStudentAuth(){
 }
 function renderOfficerAuth(){
   return `
-    <div class="field"><label>Officer username</label><input id="o-user" placeholder="assigned by SAS office"></div>
+    <div class="field"><label>Officer username</label><input id="o-user" placeholder="set by the system admin"></div>
     <div class="field"><label>Password</label><input id="o-pw" type="password" placeholder="••••••••"></div>
     <button class="btn-primary" style="width:100%" id="officer-login-btn">Log in</button>
-    <div class="hint">Officer accounts are created by the SAS office and tied to one department.</div>
+    <div class="hint">Officer accounts are created by the system admin and tied to one department.</div>
   `;
 }
 function renderAdminAuth(){
   return `
-    <div class="field"><label>SAS username</label><input id="a-user" placeholder="sas-admin"></div>
+    <div class="field"><label>Admin username</label><input id="a-user" placeholder="Enter your admin username"></div>
     <div class="field"><label>Password</label><input id="a-pw" type="password" placeholder="••••••••"></div>
     <button class="btn-primary" style="width:100%" id="admin-login-btn">Log in</button>
-    <div class="hint">Default seed account: <span class="mono">sas-admin</span> / <span class="mono">ChangeMe123</span> — change this on first login.</div>
+    <div class="hint">Default seed account: <span class="mono">sas-admin</span> / <span class="mono">ChangeMe123</span> — change this immediately after first login.</div>
   `;
 }
 
@@ -232,8 +239,8 @@ function renderShell(innerHtml){
   return `
   <div class="shell">
     <div class="sidebar">
-      <div class="brand">SAS Attendance</div>
-      <div class="role-tag">${role==='admin'?'SAS Office · Admin':role==='officer'?'Department Officer':'Student'}</div>
+      <div class="brand">Attendance System</div>
+      <div class="role-tag">${role==='admin'?'System Admin':role==='officer'?'Department Officer':'Student'}</div>
       ${items.map(([key,label])=>`<button class="nav-item ${sub===key?'active':''}" data-sub="${key}">${label}</button>`).join('')}
       <div class="who">
         Signed in as<br><strong style="color:#fff;">${u.name}</strong><br>
@@ -458,7 +465,7 @@ function renderOfficerGenerate(myEvents){
     ? Math.max(0, Math.ceil((ROTATE_MS - (Date.now()-state.officerTokenCreatedAt))/1000)) : null;
   return `
   <div class="page-head"><h1>Generate check-in QR</h1><p>Department: <span class="badge-dept">${state.currentUser.department}</span></p></div>
-  ${myEvents.length===0 ? `<div class="empty">No events have been set up for your department yet. Ask the SAS office to add one.</div>` : `
+  ${myEvents.length===0 ? `<div class="empty">No events have been set up for your department yet. Ask the system admin to add one.</div>` : `
   <div class="card" style="max-width:480px;">
     <div class="field">
       <label>Event</label>
@@ -570,7 +577,7 @@ function attachOfficerHandlers(){
 /* ---------------- PROFILE (shared by all roles) ---------------- */
 function renderProfile(){
   const u = state.currentUser;
-  const roleLabel = u.role==='admin' ? 'SAS Office admin' : u.role==='officer' ? 'Department officer' : 'Student';
+  const roleLabel = u.role==='admin' ? 'System Admin' : u.role==='officer' ? 'Department officer' : 'Student';
   return `
   <div class="page-head"><h1>My Profile</h1><p>${roleLabel} account details.</p></div>
   <div class="card" style="max-width:440px; margin-bottom:24px;">
@@ -584,7 +591,7 @@ function renderProfile(){
     ${u.role==='officer' ? `
       <div class="field"><label>Username</label><input value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
       <div class="field"><label>Department</label><input value="${u.department}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
-      <div class="hint" style="margin-top:-8px; margin-bottom:14px;">Department reassignment is handled by the SAS office, under Manage Officers.</div>
+      <div class="hint" style="margin-top:-8px; margin-bottom:14px;">Department reassignment is handled by the system admin, under Manage Officers.</div>
     ` : ''}
     ${u.role==='admin' ? `
       <div class="field"><label>Username</label><input value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
@@ -659,7 +666,7 @@ function renderAdminOverview(){
     if(a.timeIn && a.timeOut) byEvent[a.eventName].complete++;
   });
   return `
-  <div class="page-head"><h1>SAS Overview</h1><p>School-wide attendance summary, live across every department.</p></div>
+  <div class="page-head"><h1>Admin Overview</h1><p>School-wide attendance summary, live across every department.</p></div>
   <div class="grid">
     <div class="stat"><div class="num">${totalEvents}</div><div class="lbl">Events this year</div></div>
     <div class="stat"><div class="num">${totalAtt}</div><div class="lbl">Total timed in</div></div>
@@ -853,7 +860,7 @@ function renderSetupNeeded(){
   return `
   <div class="center-screen">
     <div class="auth-shell">
-      <div class="seal">SAS</div>
+      <div class="seal">AS</div>
       <div class="card">
         <h2 style="margin-top:0;">Backend not connected yet</h2>
         <p style="color:var(--ink-soft); font-size:13.5px; line-height:1.6;">
