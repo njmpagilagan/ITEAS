@@ -8,8 +8,27 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <meta name="robots" content="noindex, nofollow">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
+<script>
+  function loadWithFallback(primarySrc, fallbackSrc){
+    var s = document.createElement('script');
+    s.src = primarySrc;
+    s.onerror = function(){
+      console.warn('Primary CDN failed for', primarySrc, '— trying fallback.');
+      var s2 = document.createElement('script');
+      s2.src = fallbackSrc;
+      document.head.appendChild(s2);
+    };
+    document.head.appendChild(s);
+  }
+  loadWithFallback(
+    'https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs/qrcode.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'
+  );
+  loadWithFallback(
+    'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js'
+  );
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>

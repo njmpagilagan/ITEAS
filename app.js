@@ -606,10 +606,13 @@ function attachOfficerHandlers(){
   if(state.officerRotating && state.officerToken && lastRenderedQrToken !== state.officerToken){
     setTimeout(()=>{
       const holder = document.getElementById('qr-render');
-      if(holder && window.QRCode){
+      if(!holder) return;
+      if(window.QRCode){
         holder.innerHTML = '';
         new QRCode(holder, {text: state.officerToken, width:200, height:200, colorDark:'#1B2A4A', colorLight:'#ffffff'});
         lastRenderedQrToken = state.officerToken;
+      } else {
+        holder.innerHTML = '<p style="font-size:12px; color:var(--danger);">QR image failed to load — students can still use the code below.</p>';
       }
     }, 30);
   }
