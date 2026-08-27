@@ -236,16 +236,21 @@ function renderShell(innerHtml){
               : role==='officer' ? [['generate','Generate QR'],['attendees','Attendees'],['profile','My Profile']]
               : [['overview','Overview'],['events','Manage Events'],['departments','Departments'],['officers','Manage Officers'],['records','All Records'],['profile','My Profile']];
   const sub = role==='student' ? state.studentSubRoute : role==='officer' ? state.officerSubRoute : state.adminSubRoute;
+  const roleLabel = role==='admin'?'System Admin':role==='officer'?'Department Officer':'Student';
   return `
   <div class="shell">
     <div class="sidebar">
-      <div class="brand">Attendance System</div>
-      <div class="role-tag">${role==='admin'?'System Admin':role==='officer'?'Department Officer':'Student'}</div>
-      ${items.map(([key,label])=>`<button class="nav-item ${sub===key?'active':''}" data-sub="${key}">${label}</button>`).join('')}
-      <div class="who">
-        Signed in as<br><strong style="color:#fff;">${u.name}</strong><br>
-        <button class="nav-item" style="margin-top:10px; color:#ffb4b4;" id="logout-btn">Log out</button>
+      <div class="sidebar-top">
+        <div>
+          <div class="brand">Attendance System</div>
+          <div class="role-tag">${roleLabel}</div>
+        </div>
+        <button class="logout-chip" id="logout-btn">Log out</button>
       </div>
+      <nav class="nav-strip">
+        ${items.map(([key,label])=>`<button class="nav-item ${sub===key?'active':''}" data-sub="${key}">${label}</button>`).join('')}
+      </nav>
+      <div class="who-name">Signed in as<br><strong style="color:#fff;">${u.name}</strong></div>
     </div>
     <div class="main">${innerHtml}</div>
   </div>`;
@@ -329,7 +334,7 @@ function renderCameraModal(){
 let cameraStream = null, cameraLoop = null;
 function attachStudentHandlers(){
   const openCam = document.getElementById('open-camera-btn');
-  if(openCam) openCam.onclick = ()=>{ state.cameraOpen=true; state.err=''; render(); startCamera(); };
+  if(openCam) openCam.onclick = ()=>{ state.cameraOpen=true; state.err=''; render(); };
   const closeCam = document.getElementById('close-camera-btn');
   if(closeCam) closeCam.onclick = ()=>{ stopCamera(); state.cameraOpen=false; render(); };
   const submitCode = document.getElementById('submit-code-btn');
@@ -387,10 +392,12 @@ async function tryUseToken(rawCode){
 }
 let scanningPaused = false;
 async function startCamera(){
+  if(cameraStream){ return; } // a stream is already running — don't start a second one on top of it
   setTimeout(async ()=>{
     const video = document.getElementById('qr-video');
     const statusEl = document.getElementById('camera-status');
     if(!video) return;
+    if(cameraStream){ return; } // guard again in case two calls landed inside the same 50ms window
     if(typeof jsQR !== 'function'){
       if(statusEl) statusEl.textContent = 'The QR scanner failed to load (possibly blocked by an ad blocker or offline). Please use "Enter code manually" below instead.';
       return;
