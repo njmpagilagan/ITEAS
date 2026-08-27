@@ -270,7 +270,16 @@
     position:fixed; inset:0; background:rgba(27,42,74,0.85); display:flex; align-items:center; justify-content:center; z-index:50; padding:20px;
   }
   .camera-card{background:#fff; border-radius:var(--radius); padding:20px; max-width:420px; width:100%;}
-  video{width:100%; border-radius:8px; background:#000;}
+  video{width:100%; border-radius:8px; background:#000; display:block;}
+  .scan-frame{position:relative; border-radius:8px; overflow:hidden;}
+  .scan-reticle{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:62%; aspect-ratio:1/1;
+    border:2px solid var(--accent);
+    border-radius:12px;
+    box-shadow:0 0 0 999px rgba(0,0,0,0.28);
+    pointer-events:none;
+  }
   .close-x{float:right; background:transparent; color:var(--ink-soft); font-size:18px; padding:2px 8px;}
   .empty{color:var(--ink-soft); font-size:13.5px; padding:20px; text-align:center;}
   .badge-dept{font-size:11px; color:var(--ink-soft); background:var(--bg); padding:3px 9px; border-radius:6px; font-weight:600;}

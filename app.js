@@ -316,9 +316,13 @@ function renderCameraModal(){
     <div class="camera-card">
       <button class="close-x" id="close-camera-btn">&times;</button>
       <h3 style="margin-top:0;">Point your camera at the QR code</h3>
-      <video id="qr-video" playsinline muted></video>
+      <div class="scan-frame">
+        <video id="qr-video" playsinline muted></video>
+        <div class="scan-reticle"></div>
+      </div>
       <canvas id="qr-canvas" style="display:none;"></canvas>
       <p style="font-size:12px; color:var(--ink-soft);" id="camera-status">Requesting camera access…</p>
+      <p style="font-size:11.5px; color:var(--ink-soft);">Hold steady, fill the square with the code, and avoid glare from the officer's screen.</p>
     </div>
   </div>`;
 }
@@ -381,29 +385,60 @@ async function tryUseToken(rawCode){
   state.cameraOpen = false;
   render();
 }
+let scanningPaused = false;
 async function startCamera(){
   setTimeout(async ()=>{
     const video = document.getElementById('qr-video');
     const statusEl = document.getElementById('camera-status');
     if(!video) return;
-    try{
-      cameraStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
-      video.srcObject = cameraStream;
-      await video.play();
-      if(statusEl) statusEl.textContent = 'Scanning…';
-      const canvas = document.getElementById('qr-canvas');
-      const ctx = canvas.getContext('2d');
-      cameraLoop = setInterval(()=>{
-        if(video.readyState !== video.HAVE_ENOUGH_DATA) return;
-        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    if(typeof jsQR !== 'function'){
+      if(statusEl) statusEl.textContent = 'The QR scanner failed to load (possibly blocked by an ad blocker or offline). Please use "Enter code manually" below instead.';
+      return;
+    }
+    const constraintAttempts = [
+      {video:{facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720}}},
+      {video:{width:{ideal:1280}, height:{ideal:720}}},
+      {video:true}
+    ];
+    let lastError = null;
+    for(const constraints of constraintAttempts){
+      try{
+        cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+        lastError = null;
+        break;
+      }catch(e){ lastError = e; }
+    }
+    if(!cameraStream){
+      if(statusEl){
+        statusEl.textContent = (lastError && lastError.name === 'NotAllowedError')
+          ? 'Camera permission was denied. Allow camera access in your browser settings, or use "Enter code manually" below.'
+          : 'Camera unavailable — close this and use "Enter code manually" instead.';
+      }
+      return;
+    }
+    video.srcObject = cameraStream;
+    await video.play();
+    if(statusEl) statusEl.textContent = 'Scanning…';
+    const canvas = document.getElementById('qr-canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    scanningPaused = false;
+    cameraLoop = setInterval(()=>{
+      if(scanningPaused) return;
+      if(video.readyState !== video.HAVE_ENOUGH_DATA) return;
+      try{
+        if(canvas.width !== video.videoWidth) canvas.width = video.videoWidth;
+        if(canvas.height !== video.videoHeight) canvas.height = video.videoHeight;
         ctx.drawImage(video,0,0,canvas.width,canvas.height);
         const img = ctx.getImageData(0,0,canvas.width,canvas.height);
-        const code = jsQR(img.data, img.width, img.height);
-        if(code && code.data){ tryUseToken(code.data.trim()); }
-      }, 350);
-    }catch(e){
-      if(statusEl) statusEl.textContent = 'Camera unavailable — close this and use "Enter code manually" instead.';
-    }
+        const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+        if(code && code.data){
+          scanningPaused = true; // avoid firing the same frame's result multiple times while the async check runs
+          tryUseToken(code.data.trim()).finally(()=>{ scanningPaused = false; });
+        }
+      }catch(e){
+        console.error('QR scan frame failed', e);
+      }
+    }, 300);
   }, 50);
 }
 function stopCamera(){
