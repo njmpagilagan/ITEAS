@@ -114,6 +114,25 @@ function render(){
 }
 
 /* ---------------- LOGIN ---------------- */
+function pwField(id, label, placeholder){
+  return `<div class="field"><label>${label}</label>
+    <div class="pw-wrap">
+      <input id="${id}" type="password" placeholder="${placeholder||''}">
+      <button type="button" class="pw-toggle" data-target="${id}" aria-label="Show password">Show</button>
+    </div>
+  </div>`;
+}
+function wirePasswordToggles(){
+  document.querySelectorAll('.pw-toggle').forEach(btn=>{
+    btn.onclick = ()=>{
+      const input = document.getElementById(btn.dataset.target);
+      if(!input) return;
+      const showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      btn.textContent = showing ? 'Show' : 'Hide';
+    };
+  });
+}
 function renderLogin(){
   const isAdminPage = (typeof PAGE_MODE !== 'undefined' && PAGE_MODE === 'admin');
   const tab = isAdminPage ? 'admin' : (state.authTab === 'admin' ? 'student' : state.authTab);
@@ -152,14 +171,14 @@ function renderStudentAuth(){
     </div>
     ${mode==='login' ? `
       <div class="field"><label>Student ID</label><input id="s-id" placeholder="e.g. 2023-00451"></div>
-      <div class="field"><label>Password</label><input id="s-pw" type="password" placeholder="••••••••"></div>
+      ${pwField('s-pw', 'Password', '••••••••')}
       <button class="btn-primary" style="width:100%" id="student-login-btn">Log in</button>
     ` : `
       <div class="field"><label>Full name</label><input id="r-name" placeholder="Juan Dela Cruz"></div>
       <div class="field"><label>Student ID</label><input id="r-id" placeholder="e.g. 2023-00451"></div>
       <div class="field"><label>Section</label><input id="r-section" placeholder="BSCS 3-A"></div>
       <div class="field"><label>Department</label><select id="r-dept">${DB.departments.map(dep=>`<option>${dep}</option>`).join('')}</select></div>
-      <div class="field"><label>Password</label><input id="r-pw" type="password" placeholder="Create a password"></div>
+      ${pwField('r-pw', 'Password', 'Create a password')}
       <button class="btn-primary" style="width:100%" id="student-register-btn">Create account</button>
     `}
     <div class="hint">Your student ID doubles as your username. One account is used for every event this school year.</div>
@@ -168,7 +187,7 @@ function renderStudentAuth(){
 function renderOfficerAuth(){
   return `
     <div class="field"><label>Officer username</label><input id="o-user" placeholder="set by the system admin"></div>
-    <div class="field"><label>Password</label><input id="o-pw" type="password" placeholder="••••••••"></div>
+    ${pwField('o-pw', 'Password', '••••••••')}
     <button class="btn-primary" style="width:100%" id="officer-login-btn">Log in</button>
     <div class="hint">Officer accounts are created by the system admin and tied to one department.</div>
   `;
@@ -176,7 +195,7 @@ function renderOfficerAuth(){
 function renderAdminAuth(){
   return `
     <div class="field"><label>Admin username</label><input id="a-user" placeholder="Enter your admin username"></div>
-    <div class="field"><label>Password</label><input id="a-pw" type="password" placeholder="••••••••"></div>
+    ${pwField('a-pw', 'Password', '••••••••')}
     <button class="btn-primary" style="width:100%" id="admin-login-btn">Log in</button>
     <div class="hint">Default seed account: <span class="mono">sas-admin</span> / <span class="mono">ChangeMe123</span> — change this immediately after first login.</div>
   `;
@@ -226,6 +245,7 @@ function attachLoginHandlers(){
     if(!u || u.role!=='admin' || u.passwordHash!==hashPw(pw)){ state.err='Incorrect username or password.'; render(); return; }
     state.currentUser = u; state.route='admin'; state.err=''; render();
   };
+  wirePasswordToggles();
 }
 
 /* ---------------- SHELL ---------------- */
@@ -657,9 +677,9 @@ function renderProfile(){
   </div>
   <div class="section-title">Change password</div>
   <div class="card" style="max-width:440px;">
-    <div class="field"><label>Current password</label><input id="prof-cur-pw" type="password"></div>
-    <div class="field"><label>New password</label><input id="prof-new-pw" type="password"></div>
-    <div class="field"><label>Confirm new password</label><input id="prof-confirm-pw" type="password"></div>
+    ${pwField('prof-cur-pw', 'Current password')}
+    ${pwField('prof-new-pw', 'New password')}
+    ${pwField('prof-confirm-pw', 'Confirm new password')}
     ${state.err ? `<div class="err">${state.err}</div>` : ''}
     ${state.profileMsg==='pw-saved' ? `<div class="pill green" style="margin-bottom:12px;">Password updated</div>` : ''}
     <button class="btn-primary" style="width:100%;" id="save-password-btn">Update password</button>
@@ -699,6 +719,7 @@ function attachProfileHandlers(){
     state.profileMsg = 'pw-saved';
     render();
   };
+  wirePasswordToggles();
 }
 
 /* ---------------- ADMIN ---------------- */
@@ -789,7 +810,7 @@ function renderAdminOfficers(){
   <div class="card" style="max-width:480px; margin-bottom:24px;">
     <div class="field"><label>Officer name</label><input id="of-name" value="${d.name}" placeholder="Maria Santos"></div>
     <div class="field"><label>Username</label><input id="of-user" value="${d.username}" placeholder="cs-officer"></div>
-    <div class="field"><label>Password</label><input id="of-pw" type="password" placeholder="Set a password"></div>
+    ${pwField('of-pw', 'Password', 'Set a password')}
     <div class="field">
       <label>Department</label>
       <select id="of-dept">${DB.departments.map(dep=>`<option ${d.department===dep?'selected':''}>${dep}</option>`).join('')}</select>
@@ -909,6 +930,7 @@ function attachAdminHandlers(){
     };
   });
   if(state.adminSubRoute==='profile') attachProfileHandlers();
+  wirePasswordToggles();
 }
 
 /* ---------------- init ---------------- */
