@@ -19,7 +19,7 @@ try{
 }
 
 /* ---------------- storage helpers ---------------- */
-const EMPTY_DEFAULTS = { users:{}, events:[], tokens:{}, attendance:[], departments:[] };
+const EMPTY_DEFAULTS = { users:{}, events:[], tokens:{}, attendance:[], departments:[], sections:{} };
 async function loadAll(){
   if(!SUPABASE_CONFIGURED) return { ...EMPTY_DEFAULTS };
   const out = { ...EMPTY_DEFAULTS };
@@ -57,6 +57,13 @@ function hashPw(pw){
 function uid(prefix){ return prefix+'_'+Math.random().toString(36).slice(2,9); }
 function fmtDate(ts){ return new Date(ts).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
 function normSection(s){ return (s||'').trim().toLowerCase(); }
+function generateTempPassword(){
+  // Temp-XXXX format: easy to read/say aloud, avoids ambiguous chars (0/O, 1/I/L)
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for(let i=0;i<4;i++){ code += chars[Math.floor(Math.random()*chars.length)]; }
+  return `Temp-${code}`;
+}
 
 const DEFAULT_DEPTS = ['CS Department','Business Department','Engineering Department','Arts & Sciences','Nursing Department'];
 const ROTATE_MS = 20000;   // how often the officer's QR auto-refreshes
@@ -64,7 +71,7 @@ const TOKEN_TTL_MS = 25000; // grace window past a refresh before a code stops w
 let qrRotateTimer = null;
 let lastRenderedQrToken = null;
 
-let DB = { users:{}, events:[], tokens:{}, attendance:[], departments:[] };
+let DB = { users:{}, events:[], tokens:{}, attendance:[], departments:[], sections:{} };
 let state = {
   route:'login',           // login | student | officer | admin
   authTab:'student',       // student | officer | admin
@@ -83,14 +90,20 @@ let state = {
   officerRotating:false,
   officerPhase:'in',       // 'in' (time-in) or 'out' (time-out)
   newEventDraft:{name:'', date:'', departments:[...DEFAULT_DEPTS]},
-  newOfficerDraft:{name:'', username:'', password:'', department:DEFAULT_DEPTS[0]},
+  newOfficerDraft:{name:'', username:'', password:'', department:DEFAULT_DEPTS[0], section:''},
   adminFilterEvent:'all',
   adminFilterDept:'all',
-  profileMsg:''
+  sectionsFilterDept:'',
+  profileMsg:'',
+  editingOfficerUsername:null,
+  editingStudentId:null,
+  studentSearch:'',
+  lastResetPassword:null
 };
 
 async function seedIfEmpty(){
   DB = await loadAll();
+  if(!DB.sections) DB.sections = {};
   let usersChanged = false, deptsChanged = false;
   if(!DB.users['sas-admin']){
     DB.users['sas-admin'] = {id:'sas-admin', role:'admin', name:'System Admin', username:'sas-admin', passwordHash:hashPw('ChangeMe123')};
@@ -104,6 +117,13 @@ async function seedIfEmpty(){
   if(deptsChanged){ await saveKey('departments', DB.departments); }
   state.newEventDraft.departments = [...DB.departments];
   state.newOfficerDraft.department = DB.departments[0];
+  state.sectionsFilterDept = DB.departments[0] || '';
+}
+function sectionsFor(dept){ return DB.sections[dept] || []; }
+function sectionOptions(dept, selected){
+  const list = sectionsFor(dept);
+  if(list.length===0) return '<option value="">No sections yet — ask the admin</option>';
+  return list.map(s=>`<option ${s===selected?'selected':''}>${s}</option>`).join('');
 }
 
 function render(){
@@ -177,8 +197,8 @@ function renderStudentAuth(){
     ` : `
       <div class="field"><label>Full name</label><input id="r-name" placeholder="Juan Dela Cruz"></div>
       <div class="field"><label>Student ID</label><input id="r-id" placeholder="e.g. 2023-00451"></div>
-      <div class="field"><label>Section</label><input id="r-section" placeholder="BSCS 3-A"></div>
       <div class="field"><label>Department</label><select id="r-dept">${DB.departments.map(dep=>`<option>${dep}</option>`).join('')}</select></div>
+      <div class="field"><label>Section</label><select id="r-section">${sectionOptions(DB.departments[0], null)}</select></div>
       ${pwField('r-pw', 'Password', 'Create a password')}
       <button class="btn-primary" style="width:100%" id="student-register-btn">Create account</button>
     `}
@@ -209,6 +229,11 @@ function attachLoginHandlers(){
   document.querySelectorAll('.auth-sub a').forEach(el=>{
     el.onclick = ()=>{ state.authMode = el.dataset.mode; state.err=''; render(); };
   });
+  const rDept = document.getElementById('r-dept');
+  if(rDept) rDept.onchange = ()=>{
+    const secSel = document.getElementById('r-section');
+    if(secSel) secSel.innerHTML = sectionOptions(rDept.value, null);
+  };
   const sLogin = document.getElementById('student-login-btn');
   if(sLogin) sLogin.onclick = ()=>{
     const id = document.getElementById('s-id').value.trim();
@@ -224,7 +249,7 @@ function attachLoginHandlers(){
     const section = document.getElementById('r-section').value.trim();
     const department = document.getElementById('r-dept').value;
     const pw = document.getElementById('r-pw').value;
-    if(!name || !id || !section || !department || !pw){ state.err='Please fill in every field.'; render(); return; }
+    if(!name || !id || !section || !department || !pw){ state.err='Please fill in every field — if Section only shows "No sections yet," ask the admin to add one for your department first.'; render(); return; }
     if(DB.users[id]){ state.err='An account with that student ID already exists.'; render(); return; }
     DB.users[id] = {id, role:'student', name, section, department, passwordHash:hashPw(pw)};
     await saveKey('users', DB.users);
@@ -255,7 +280,7 @@ function renderShell(innerHtml){
   const role = u.role;
   const items = role==='student' ? [['checkin','Check In'],['history','My Attendance'],['profile','My Profile']]
               : role==='officer' ? [['generate','Generate QR'],['attendees','Attendees'],['profile','My Profile']]
-              : [['overview','Overview'],['events','Manage Events'],['departments','Departments'],['officers','Manage Officers'],['records','All Records'],['profile','My Profile']];
+              : [['overview','Overview'],['events','Manage Events'],['departments','Departments'],['sections','Sections'],['students','Manage Students'],['officers','Manage Officers'],['records','All Records'],['profile','My Profile']];
   const sub = role==='student' ? state.studentSubRoute : role==='officer' ? state.officerSubRoute : state.adminSubRoute;
   const roleLabel = role==='admin'?'System Admin':role==='officer'?'Department Officer':'Student';
   return `
@@ -287,7 +312,7 @@ function attachShellHandlers(){
         state.officerSubRoute = sub;
       }
       if(role==='admin'){ state.adminSubRoute = sub; }
-      state.err=''; state.profileMsg='';
+      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null;
       // views that show shared records should always reflect what's actually in the database right now,
       // not just whatever happened to be loaded when this tab was first opened
       if((role==='student' && sub==='history') || (role==='officer' && sub==='attendees') || (role==='admin' && (sub==='overview' || sub==='records'))){
@@ -541,9 +566,11 @@ function renderOfficerGenerate(myEvents){
   const activeId = state.officerActiveEventId || (myEvents[0] && myEvents[0].id);
   const remaining = state.officerRotating && state.officerTokenCreatedAt
     ? Math.max(0, Math.ceil((ROTATE_MS - (Date.now()-state.officerTokenCreatedAt))/1000)) : null;
+  const noSection = !state.currentUser.section;
   return `
-  <div class="page-head"><h1>Generate check-in QR</h1><p>Department: <span class="badge-dept">${state.currentUser.department}</span></p></div>
-  ${myEvents.length===0 ? `<div class="empty">No events have been set up for your department yet. Ask the system admin to add one.</div>` : `
+  <div class="page-head"><h1>Generate check-in QR</h1><p><span class="badge-dept">${state.currentUser.department}</span> · Section <span class="badge-dept">${state.currentUser.section || 'not set'}</span></p></div>
+  ${noSection ? `<div class="empty">Your account has no section assigned yet. Ask the system admin to set one under Manage Officers.</div>` :
+  myEvents.length===0 ? `<div class="empty">No events have been set up for your department yet. Ask the system admin to add one.</div>` : `
   <div class="card" style="max-width:480px;">
     <div class="field">
       <label>Event</label>
@@ -579,10 +606,11 @@ function renderOfficerGenerate(myEvents){
 function renderOfficerAttendees(myEvents){
   const activeId = state.officerActiveEventId || (myEvents[0] && myEvents[0].id);
   const ev = myEvents.find(e=>e.id===activeId);
-  const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id && a.department===state.currentUser.department).sort((a,b)=>(b.timeIn||0)-(a.timeIn||0)) : [];
+  const mySection = state.currentUser.section;
+  const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id && a.department===state.currentUser.department && normSection(a.section)===normSection(mySection)).sort((a,b)=>(b.timeIn||0)-(a.timeIn||0)) : [];
   const complete = rows.filter(r=>r.timeIn && r.timeOut).length;
   return `
-  <div class="page-head"><h1>Attendees</h1><p>Live list for your department's desk.</p></div>
+  <div class="page-head"><h1>Attendees</h1><p>Live list for your section's desk.</p></div>
   ${myEvents.length===0 ? `<div class="empty">No events yet.</div>` : `
   <div class="card" style="max-width:300px; margin-bottom:18px;">
     <div class="field" style="margin-bottom:0;">
@@ -619,7 +647,7 @@ function attachOfficerHandlers(){
     const eventId = document.getElementById('officer-event-select').value;
     state.officerActiveEventId = eventId;
     state.officerRotating = true;
-    await startQrRotation(eventId, state.currentUser.department, state.officerPhase);
+    await startQrRotation(eventId, state.currentUser.department, state.currentUser.section, state.officerPhase);
   };
   document.querySelectorAll('.phase-tab').forEach(el=>{
     el.onclick = ()=>{
@@ -665,14 +693,15 @@ function renderProfile(){
     <div class="field"><label>Full name</label><input id="prof-name" value="${u.name}"></div>
     ${u.role==='student' ? `
       <div class="field"><label>Student ID</label><input value="${u.id}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
-      <div class="field"><label>Section</label><input id="prof-section" value="${u.section||''}"></div>
       <div class="field"><label>Department</label><select id="prof-dept">${DB.departments.map(dep=>`<option ${u.department===dep?'selected':''}>${dep}</option>`).join('')}</select></div>
-      <div class="hint" style="margin-top:-8px; margin-bottom:14px;">Only your own department's QR code will check you in.</div>
+      <div class="field"><label>Section</label><select id="prof-section">${sectionOptions(u.department, u.section)}</select></div>
+      <div class="hint" style="margin-top:-8px; margin-bottom:14px;">Only your own department and section's QR code will check you in.</div>
     ` : ''}
     ${u.role==='officer' ? `
       <div class="field"><label>Username</label><input value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
       <div class="field"><label>Department</label><input value="${u.department}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
-      <div class="hint" style="margin-top:-8px; margin-bottom:14px;">Department reassignment is handled by the system admin, under Manage Officers.</div>
+      <div class="field"><label>Section</label><input value="${u.section || 'Not set'}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
+      <div class="hint" style="margin-top:-8px; margin-bottom:14px;">Department/section reassignment is handled by the system admin, under Manage Officers.</div>
     ` : ''}
     ${u.role==='admin' ? `
       <div class="field"><label>Username</label><input value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
@@ -691,16 +720,21 @@ function renderProfile(){
   </div>`;
 }
 function attachProfileHandlers(){
+  const profDept = document.getElementById('prof-dept');
+  if(profDept) profDept.onchange = ()=>{
+    const secSel = document.getElementById('prof-section');
+    if(secSel) secSel.innerHTML = sectionOptions(profDept.value, null);
+  };
   const save = document.getElementById('save-profile-btn');
   if(save) save.onclick = async ()=>{
     const u = state.currentUser;
     const nameEl = document.getElementById('prof-name');
     if(nameEl && nameEl.value.trim()) u.name = nameEl.value.trim();
     if(u.role==='student'){
-      const secEl = document.getElementById('prof-section');
-      if(secEl) u.section = secEl.value.trim();
       const deptEl = document.getElementById('prof-dept');
       if(deptEl) u.department = deptEl.value;
+      const secEl = document.getElementById('prof-section');
+      if(secEl) u.section = secEl.value;
     }
     DB.users[u.id] = u;
     await saveKey('users', DB.users);
@@ -732,6 +766,8 @@ function renderAdmin(){
   if(state.adminSubRoute==='overview') return renderAdminOverview();
   if(state.adminSubRoute==='events') return renderAdminEvents();
   if(state.adminSubRoute==='departments') return renderAdminDepartments();
+  if(state.adminSubRoute==='sections') return renderAdminSections();
+  if(state.adminSubRoute==='students') return renderAdminStudents();
   if(state.adminSubRoute==='officers') return renderAdminOfficers();
   if(state.adminSubRoute==='records') return renderAdminRecords();
   return renderProfile();
@@ -807,27 +843,94 @@ function renderAdminDepartments(){
     </table>
   </div>`;
 }
+function renderAdminSections(){
+  const dept = state.sectionsFilterDept || DB.departments[0] || '';
+  const list = sectionsFor(dept);
+  const inUse = new Set(Object.values(DB.users).filter(u=>u.role==='student' || u.role==='officer').map(u=>normSection(u.section)));
+  return `
+  <div class="page-head"><h1>Sections</h1><p>Manage the sections students and officers can select, grouped by department.</p></div>
+  <div class="card" style="max-width:440px; margin-bottom:24px;">
+    <div class="field">
+      <label>Department</label>
+      <select id="sections-dept-select">${DB.departments.map(dp=>`<option ${dp===dept?'selected':''}>${dp}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>Add a section</label><input id="new-section-name" placeholder="e.g. BSCS 3-A"></div>
+    ${state.err ? `<div class="err">${state.err}</div>` : ''}
+    <button class="btn-primary" style="width:100%;" id="add-section-btn">Add section</button>
+  </div>
+  <div class="section-title">Sections in ${dept || '—'}</div>
+  <div class="card" style="padding:0; max-width:440px;">
+    <table>
+      <tr><th>Section</th><th></th></tr>
+      ${list.map(s=>`<tr><td>${s} ${inUse.has(normSection(s))?'<span class="pill gold" style="margin-left:6px;">in use</span>':''}</td><td><button class="btn-danger" data-del-section="${s}">Remove</button></td></tr>`).join('') || `<tr><td colspan="2" class="empty">No sections yet for this department.</td></tr>`}
+    </table>
+  </div>`;
+}
+function renderAdminStudents(){
+  const students = Object.values(DB.users).filter(u=>u.role==='student').sort((a,b)=>a.name.localeCompare(b.name));
+  const editing = state.editingStudentId;
+  const editingUser = editing ? DB.users[editing] : null;
+  const reset = state.lastResetPassword;
+  return `
+  <div class="page-head"><h1>Manage Students</h1><p>Update account details or reset a student's password.</p></div>
+  ${reset ? `
+    <div class="card" style="max-width:480px; margin-bottom:20px; border-color:var(--accent);">
+      <div class="pill gold" style="margin-bottom:10px;">Password reset</div>
+      <p style="font-size:13.5px; margin:0 0 10px 0;">New temporary password for <strong>${reset.name}</strong> (<span class="mono">${reset.studentId}</span>):</p>
+      <div class="code-text" style="font-size:16px;">${reset.plaintext}</div>
+      <p class="hint">Write this down now — it won't be shown again. Have the student log in with it and change it right away under My Profile.</p>
+      <button class="btn-ghost" style="width:100%; margin-top:10px;" id="dismiss-reset-btn">Dismiss</button>
+    </div>
+  ` : ''}
+  ${editingUser ? `
+  <div class="card" style="max-width:480px; margin-bottom:24px;">
+    <div class="pill gold" style="margin-bottom:14px;">Editing ${editingUser.id}</div>
+    <div class="field"><label>Full name</label><input id="stu-edit-name" value="${editingUser.name}"></div>
+    <div class="field"><label>Department</label><select id="stu-edit-dept">${DB.departments.map(dep=>`<option ${editingUser.department===dep?'selected':''}>${dep}</option>`).join('')}</select></div>
+    <div class="field"><label>Section</label><select id="stu-edit-section">${sectionOptions(editingUser.department, editingUser.section)}</select></div>
+    ${state.err ? `<div class="err">${state.err}</div>` : ''}
+    <button class="btn-primary" style="width:100%;" id="save-student-edit-btn">Save changes</button>
+    <button class="btn-ghost" style="width:100%; margin-top:8px;" id="cancel-student-edit-btn">Cancel</button>
+  </div>
+  ` : ''}
+  <div class="card" style="max-width:320px; margin-bottom:18px;">
+    <div class="field" style="margin-bottom:0;"><label>Search</label><input id="student-search" placeholder="Name or student ID"></div>
+  </div>
+  <div class="card" style="padding:0;">
+    <table id="student-table">
+      <tr><th>Name</th><th>ID</th><th>Department</th><th>Section</th><th></th></tr>
+      ${students.map(s=>`<tr data-student-row="${s.id}" data-student-search="${(s.name+' '+s.id).toLowerCase()}"><td>${s.name}</td><td class="mono">${s.id}</td><td><span class="badge-dept">${s.department}</span></td><td>${s.section||'—'}</td><td><button class="btn-ghost" data-edit-student="${s.id}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-reset-student="${s.id}">Reset password</button></td></tr>`).join('') || `<tr><td colspan="5" class="empty">No student accounts yet.</td></tr>`}
+    </table>
+  </div>`;
+}
 function renderAdminOfficers(){
   const d = state.newOfficerDraft;
+  const editing = state.editingOfficerUsername;
   const officers = Object.values(DB.users).filter(u=>u.role==='officer');
   return `
-  <div class="page-head"><h1>Manage Officers</h1><p>One account per department desk.</p></div>
+  <div class="page-head"><h1>Manage Officers</h1><p>One account per section desk.</p></div>
   <div class="card" style="max-width:480px; margin-bottom:24px;">
+    ${editing ? `<div class="pill gold" style="margin-bottom:14px;">Editing ${editing}</div>` : ''}
     <div class="field"><label>Officer name</label><input id="of-name" value="${d.name}" placeholder="Maria Santos"></div>
-    <div class="field"><label>Username</label><input id="of-user" value="${d.username}" placeholder="cs-officer"></div>
-    ${pwField('of-pw', 'Password', 'Set a password')}
+    <div class="field"><label>Username</label><input id="of-user" value="${d.username}" placeholder="cs-officer" ${editing?'disabled style="background:var(--bg); color:var(--ink-soft);"':''}></div>
+    ${pwField('of-pw', 'Password', editing ? 'Leave blank to keep current password' : 'Set a password')}
     <div class="field">
       <label>Department</label>
       <select id="of-dept">${DB.departments.map(dep=>`<option ${d.department===dep?'selected':''}>${dep}</option>`).join('')}</select>
     </div>
+    <div class="field">
+      <label>Section</label>
+      <select id="of-section">${sectionOptions(d.department || DB.departments[0], d.section)}</select>
+    </div>
     ${state.err ? `<div class="err">${state.err}</div>` : ''}
-    <button class="btn-primary" style="width:100%;" id="create-officer-btn">Create officer account</button>
+    <button class="btn-primary" style="width:100%;" id="create-officer-btn">${editing ? 'Save changes' : 'Create officer account'}</button>
+    ${editing ? `<button class="btn-ghost" style="width:100%; margin-top:8px;" id="cancel-edit-officer-btn">Cancel</button>` : ''}
   </div>
   <div class="section-title">All officers</div>
   <div class="card" style="padding:0;">
     <table>
-      <tr><th>Name</th><th>Username</th><th>Department</th><th></th></tr>
-      ${officers.map(o=>`<tr><td>${o.name}</td><td class="mono">${o.username}</td><td><span class="badge-dept">${o.department}</span></td><td><button class="btn-danger" data-del-officer="${o.username}">Remove</button></td></tr>`).join('') || `<tr><td colspan="4" class="empty">No officer accounts yet.</td></tr>`}
+      <tr><th>Name</th><th>Username</th><th>Department</th><th>Section</th><th></th></tr>
+      ${officers.map(o=>`<tr><td>${o.name}</td><td class="mono">${o.username}</td><td><span class="badge-dept">${o.department}</span></td><td>${o.section || '<span class="pill gold">not set</span>'}</td><td><button class="btn-ghost" data-edit-officer="${o.username}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-del-officer="${o.username}">Remove</button></td></tr>`).join('') || `<tr><td colspan="5" class="empty">No officer accounts yet.</td></tr>`}
     </table>
   </div>`;
 }
@@ -890,18 +993,52 @@ function attachAdminHandlers(){
   const ofUser = document.getElementById('of-user');
   if(ofUser) ofUser.oninput = ()=>{ state.newOfficerDraft.username = ofUser.value; };
   const ofDept = document.getElementById('of-dept');
-  if(ofDept) ofDept.onchange = ()=>{ state.newOfficerDraft.department = ofDept.value; };
+  if(ofDept) ofDept.onchange = ()=>{
+    state.newOfficerDraft.department = ofDept.value;
+    const secSel = document.getElementById('of-section');
+    if(secSel) secSel.innerHTML = sectionOptions(ofDept.value, null);
+  };
   const createOf = document.getElementById('create-officer-btn');
   if(createOf) createOf.onclick = async ()=>{
     const name = document.getElementById('of-name').value.trim();
     const username = document.getElementById('of-user').value.trim();
     const pw = document.getElementById('of-pw').value;
     const department = document.getElementById('of-dept').value;
-    if(!name || !username || !pw){ state.err='Fill in every field.'; render(); return; }
-    if(DB.users[username]){ state.err='That username is taken.'; render(); return; }
-    DB.users[username] = {id:username, role:'officer', name, username, department, passwordHash:hashPw(pw)};
+    const section = document.getElementById('of-section').value;
+    const editing = state.editingOfficerUsername;
+    if(!name || !username || !section || (!editing && !pw)){ state.err='Fill in every field — if Section only shows "No sections yet," add one under Sections first.'; render(); return; }
+    if(editing){
+      const existing = DB.users[editing];
+      if(!existing){ state.err='This officer no longer exists.'; state.editingOfficerUsername=null; render(); return; }
+      existing.name = name;
+      existing.department = department;
+      existing.section = section;
+      if(pw) existing.passwordHash = hashPw(pw);
+      DB.users[editing] = existing;
+    } else {
+      if(DB.users[username]){ state.err='That username is taken.'; render(); return; }
+      DB.users[username] = {id:username, role:'officer', name, username, department, section, passwordHash:hashPw(pw)};
+    }
     await saveKey('users', DB.users);
-    state.newOfficerDraft = {name:'', username:'', password:'', department:DB.departments[0]};
+    state.newOfficerDraft = {name:'', username:'', password:'', department:DB.departments[0], section:''};
+    state.editingOfficerUsername = null;
+    state.err='';
+    render();
+  };
+  document.querySelectorAll('[data-edit-officer]').forEach(el=>{
+    el.onclick = ()=>{
+      const o = DB.users[el.dataset.editOfficer];
+      if(!o) return;
+      state.editingOfficerUsername = o.username;
+      state.newOfficerDraft = {name:o.name, username:o.username, password:'', department:o.department, section:o.section || ''};
+      state.err='';
+      render();
+    };
+  });
+  const cancelEdit = document.getElementById('cancel-edit-officer-btn');
+  if(cancelEdit) cancelEdit.onclick = ()=>{
+    state.editingOfficerUsername = null;
+    state.newOfficerDraft = {name:'', username:'', password:'', department:DB.departments[0], section:''};
     state.err='';
     render();
   };
@@ -934,6 +1071,84 @@ function attachAdminHandlers(){
       render();
     };
   });
+  const sectionsDeptSel = document.getElementById('sections-dept-select');
+  if(sectionsDeptSel) sectionsDeptSel.onchange = ()=>{ state.sectionsFilterDept = sectionsDeptSel.value; state.err=''; render(); };
+  const addSectionBtn = document.getElementById('add-section-btn');
+  if(addSectionBtn) addSectionBtn.onclick = async ()=>{
+    const dept = document.getElementById('sections-dept-select').value;
+    const nameEl = document.getElementById('new-section-name');
+    const name = nameEl.value.trim();
+    if(!name){ state.err='Enter a section name.'; render(); return; }
+    if(!DB.sections[dept]) DB.sections[dept] = [];
+    if(DB.sections[dept].some(s=>normSection(s)===normSection(name))){ state.err='That section already exists for this department.'; render(); return; }
+    DB.sections[dept].push(name);
+    await saveKey('sections', DB.sections);
+    state.sectionsFilterDept = dept;
+    state.err='';
+    render();
+  };
+  document.querySelectorAll('[data-del-section]').forEach(el=>{
+    el.onclick = async ()=>{
+      const dept = state.sectionsFilterDept || DB.departments[0];
+      DB.sections[dept] = (DB.sections[dept]||[]).filter(s=>s!==el.dataset.delSection);
+      await saveKey('sections', DB.sections);
+      render();
+    };
+  });
+  const studentSearchEl = document.getElementById('student-search');
+  if(studentSearchEl) studentSearchEl.oninput = ()=>{
+    // filter rows directly in the DOM rather than re-rendering, so typing doesn't lose focus
+    const q = studentSearchEl.value.trim().toLowerCase();
+    document.querySelectorAll('#student-table tr[data-student-row]').forEach(tr=>{
+      tr.style.display = tr.dataset.studentSearch.includes(q) ? '' : 'none';
+    });
+  };
+  document.querySelectorAll('[data-edit-student]').forEach(el=>{
+    el.onclick = ()=>{
+      state.editingStudentId = el.dataset.editStudent;
+      state.err = '';
+      render();
+    };
+  });
+  const stuEditDept = document.getElementById('stu-edit-dept');
+  if(stuEditDept) stuEditDept.onchange = ()=>{
+    const secSel = document.getElementById('stu-edit-section');
+    if(secSel) secSel.innerHTML = sectionOptions(stuEditDept.value, null);
+  };
+  const saveStudentEdit = document.getElementById('save-student-edit-btn');
+  if(saveStudentEdit) saveStudentEdit.onclick = async ()=>{
+    const id = state.editingStudentId;
+    const u = DB.users[id];
+    if(!u){ state.err='This student no longer exists.'; state.editingStudentId=null; render(); return; }
+    const name = document.getElementById('stu-edit-name').value.trim();
+    const department = document.getElementById('stu-edit-dept').value;
+    const section = document.getElementById('stu-edit-section').value;
+    if(!name || !section){ state.err='Fill in every field.'; render(); return; }
+    u.name = name; u.department = department; u.section = section;
+    DB.users[id] = u;
+    await saveKey('users', DB.users);
+    state.editingStudentId = null;
+    state.err = '';
+    render();
+  };
+  const cancelStudentEdit = document.getElementById('cancel-student-edit-btn');
+  if(cancelStudentEdit) cancelStudentEdit.onclick = ()=>{ state.editingStudentId=null; state.err=''; render(); };
+  document.querySelectorAll('[data-reset-student]').forEach(el=>{
+    el.onclick = async ()=>{
+      const id = el.dataset.resetStudent;
+      const u = DB.users[id];
+      if(!u) return;
+      if(!confirm(`Reset the password for ${u.name} (${id})? Their current password will stop working immediately.`)) return;
+      const temp = generateTempPassword();
+      u.passwordHash = hashPw(temp);
+      DB.users[id] = u;
+      await saveKey('users', DB.users);
+      state.lastResetPassword = { studentId:id, name:u.name, plaintext: temp };
+      render();
+    };
+  });
+  const dismissReset = document.getElementById('dismiss-reset-btn');
+  if(dismissReset) dismissReset.onclick = ()=>{ state.lastResetPassword=null; render(); };
   if(state.adminSubRoute==='profile') attachProfileHandlers();
   wirePasswordToggles();
 }
