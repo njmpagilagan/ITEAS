@@ -50,6 +50,7 @@ async function fetchKey(key, fallback){
 
 /* simple non-cryptographic hash - fine for a school demo, not production auth */
 function hashPw(pw){
+  pw = (pw || '').trim(); // guards against stray whitespace from typing/copy-paste breaking a match
   let h = 0;
   for(let i=0;i<pw.length;i++){ h = ((h<<5)-h + pw.charCodeAt(i))|0; }
   return 'h'+h.toString(36);
@@ -58,11 +59,12 @@ function uid(prefix){ return prefix+'_'+Math.random().toString(36).slice(2,9); }
 function fmtDate(ts){ return new Date(ts).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
 function normSection(s){ return (s||'').trim().toLowerCase(); }
 function generateTempPassword(){
-  // Temp-XXXX format: easy to read/say aloud, avoids ambiguous chars (0/O, 1/I/L)
+  // TEMP-XXXX format: all uppercase (no case-sensitivity confusion when retyped),
+  // avoids ambiguous chars (0/O, 1/I/L)
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   let code = '';
   for(let i=0;i<4;i++){ code += chars[Math.floor(Math.random()*chars.length)]; }
-  return `Temp-${code}`;
+  return `TEMP-${code}`;
 }
 
 const DEFAULT_DEPTS = ['CS Department','Business Department','Engineering Department','Arts & Sciences','Nursing Department'];
@@ -908,8 +910,11 @@ function renderAdminStudents(){
     <div class="card" style="max-width:480px; margin-bottom:20px; border-color:var(--accent);">
       <div class="pill gold" style="margin-bottom:10px;">Password reset</div>
       <p style="font-size:13.5px; margin:0 0 10px 0;">New temporary password for <strong>${reset.name}</strong> (<span class="mono">${reset.studentId}</span>):</p>
-      <div class="code-text" style="font-size:16px;">${reset.plaintext}</div>
-      <p class="hint">Write this down now — it won't be shown again. Have the student log in with it and change it right away under My Profile.</p>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div class="code-text" style="font-size:16px;">${reset.plaintext}</div>
+        <button class="btn-ghost" id="copy-reset-pw-btn" data-pw="${reset.plaintext}">Copy</button>
+      </div>
+      <p class="hint">Copy and send this directly rather than retyping it by hand — it's all uppercase, but copy-paste avoids any mix-ups. It won't be shown again after you leave this page.</p>
       <button class="btn-ghost" style="width:100%; margin-top:10px;" id="dismiss-reset-btn">Dismiss</button>
     </div>
   ` : ''}
@@ -1189,6 +1194,16 @@ function attachAdminHandlers(){
   });
   const dismissReset = document.getElementById('dismiss-reset-btn');
   if(dismissReset) dismissReset.onclick = ()=>{ state.lastResetPassword=null; render(); };
+  const copyResetBtn = document.getElementById('copy-reset-pw-btn');
+  if(copyResetBtn) copyResetBtn.onclick = async ()=>{
+    try{
+      await navigator.clipboard.writeText(copyResetBtn.dataset.pw);
+      copyResetBtn.textContent = 'Copied!';
+      setTimeout(()=>{ copyResetBtn.textContent = 'Copy'; }, 1500);
+    }catch(e){
+      copyResetBtn.textContent = 'Copy failed — select manually';
+    }
+  };
   document.querySelectorAll('[data-remove-att]').forEach(el=>{
     el.onclick = async ()=>{
       if(!confirm('Remove this attendance record? This clears both time-in and time-out for that student on this event.')) return;
