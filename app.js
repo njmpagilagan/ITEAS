@@ -624,13 +624,22 @@ function renderOfficerAttendees(myEvents){
     <div class="stat"><div class="num">${rows.length}</div><div class="lbl">Timed in</div></div>
     <div class="stat"><div class="num">${complete}</div><div class="lbl">Completed (in &amp; out)</div></div>
   </div>
+  <div style="margin-bottom:18px;">
+    <button class="btn-danger" id="reset-event-attendance-btn" ${rows.length===0?'disabled':''}>Reset attendance for this event (${rows.length})</button>
+    <p class="hint" style="margin-top:8px;">Clears all check-ins for your section on this event — students will need to scan in again from scratch.</p>
+  </div>
   <div class="card" style="padding:0;">
-    <table>
-      <tr><th>Student</th><th>Section</th><th>Time in</th><th>Time out</th><th>Status</th></tr>
-      ${rows.map(r=>`<tr><td>${r.studentName}</td><td>${r.section}</td><td>${r.timeIn?fmtDate(r.timeIn):'—'}</td><td>${r.timeOut?fmtDate(r.timeOut):'—'}</td><td>${r.timeIn && r.timeOut ? '<span class="pill green">Present</span>' : '<span class="pill gold">Time-in only</span>'}</td></tr>`).join('') || `<tr><td colspan="5" class="empty">No check-ins yet for this event.</td></tr>`}
+    <table id="officer-att-table">
+      <tr><th>Student</th><th>Section</th><th>Time in</th><th>Time out</th><th>Status</th><th></th></tr>
+      ${rows.map(r=>`<tr><td>${r.studentName}</td><td>${r.section}</td><td>${r.timeIn?fmtDate(r.timeIn):'—'}</td><td>${r.timeOut?fmtDate(r.timeOut):'—'}</td><td>${r.timeIn && r.timeOut ? '<span class="pill green">Present</span>' : '<span class="pill gold">Time-in only</span>'}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="6" class="empty">No check-ins yet for this event.</td></tr>`}
     </table>
   </div>
   `}`;
+}
+async function removeAttendanceRecord(recordId){
+  DB.attendance = await fetchKey('attendance', DB.attendance);
+  DB.attendance = DB.attendance.filter(a=>a.id!==recordId);
+  await saveKey('attendance', DB.attendance);
 }
 function attachOfficerHandlers(){
   const sel = document.getElementById('officer-event-select');
@@ -680,6 +689,28 @@ function attachOfficerHandlers(){
       }
     }, 30);
   }
+  document.querySelectorAll('[data-remove-att]').forEach(el=>{
+    el.onclick = async ()=>{
+      if(!confirm('Remove this attendance record? The student will need to scan again from scratch.')) return;
+      await removeAttendanceRecord(el.dataset.removeAtt);
+      render();
+    };
+  });
+  const resetEventBtn = document.getElementById('reset-event-attendance-btn');
+  if(resetEventBtn) resetEventBtn.onclick = async ()=>{
+    const eventSelect = document.getElementById('officer-att-event-select');
+    const eventId = eventSelect ? eventSelect.value : state.officerActiveEventId;
+    if(!eventId) return;
+    const dept = state.currentUser.department;
+    const section = state.currentUser.section;
+    DB.attendance = await fetchKey('attendance', DB.attendance);
+    const toRemove = DB.attendance.filter(a => a.eventId===eventId && a.department===dept && normSection(a.section)===normSection(section));
+    if(toRemove.length===0){ render(); return; }
+    if(!confirm(`Reset attendance for this event? This permanently removes ${toRemove.length} record${toRemove.length===1?'':'s'} for your section — students will need to scan in again from scratch.`)) return;
+    DB.attendance = DB.attendance.filter(a => !(a.eventId===eventId && a.department===dept && normSection(a.section)===normSection(section)));
+    await saveKey('attendance', DB.attendance);
+    render();
+  };
   if(state.officerSubRoute==='profile') attachProfileHandlers();
 }
 
@@ -940,6 +971,7 @@ function renderAdminRecords(){
   let rows = DB.attendance.slice().sort((a,b)=>(b.timeIn||0)-(a.timeIn||0));
   if(state.adminFilterEvent!=='all') rows = rows.filter(r=>r.eventName===state.adminFilterEvent);
   if(state.adminFilterDept!=='all') rows = rows.filter(r=>r.department===state.adminFilterDept);
+  const canBulkReset = state.adminFilterEvent !== 'all';
   return `
   <div class="page-head"><h1>All Records</h1><p>Full attendance log across every event and department.</p></div>
   <div class="row" style="margin-bottom:18px; max-width:520px;">
@@ -952,10 +984,18 @@ function renderAdminRecords(){
       <select id="filter-dept">${depts.map(dp=>`<option ${state.adminFilterDept===dp?'selected':''}>${dp}</option>`).join('')}</select>
     </div>
   </div>
+  <div style="margin-bottom:18px;">
+    ${canBulkReset ? `
+      <button class="btn-danger" id="bulk-reset-records-btn" ${rows.length===0?'disabled':''}>Reset all ${rows.length} record${rows.length===1?'':'s'} shown below</button>
+      <p class="hint" style="margin-top:8px;">Clears attendance for <strong>${state.adminFilterEvent}</strong>${state.adminFilterDept!=='all'?` in ${state.adminFilterDept}`:' across every department'} — students will need to scan in again from scratch.</p>
+    ` : `
+      <p class="hint">Select a specific event above to reset all of its attendance at once.</p>
+    `}
+  </div>
   <div class="card" style="padding:0;">
     <table>
-      <tr><th>Student</th><th>Event</th><th>Department</th><th>Time in</th><th>Time out</th><th>Status</th></tr>
-      ${rows.map(r=>`<tr><td>${r.studentName} <span style="color:var(--ink-soft);">(${r.studentId})</span></td><td>${r.eventName}</td><td><span class="badge-dept">${r.department}</span></td><td>${r.timeIn?fmtDate(r.timeIn):'—'}</td><td>${r.timeOut?fmtDate(r.timeOut):'—'}</td><td>${r.timeIn && r.timeOut ? '<span class="pill green">Present</span>' : '<span class="pill gold">Time-in only</span>'}</td></tr>`).join('') || `<tr><td colspan="6" class="empty">No records match this filter.</td></tr>`}
+      <tr><th>Student</th><th>Event</th><th>Department</th><th>Time in</th><th>Time out</th><th>Status</th><th></th></tr>
+      ${rows.map(r=>`<tr><td>${r.studentName} <span style="color:var(--ink-soft);">(${r.studentId})</span></td><td>${r.eventName}</td><td><span class="badge-dept">${r.department}</span></td><td>${r.timeIn?fmtDate(r.timeIn):'—'}</td><td>${r.timeOut?fmtDate(r.timeOut):'—'}</td><td>${r.timeIn && r.timeOut ? '<span class="pill green">Present</span>' : '<span class="pill gold">Time-in only</span>'}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="7" class="empty">No records match this filter.</td></tr>`}
     </table>
   </div>`;
 }
@@ -1149,6 +1189,25 @@ function attachAdminHandlers(){
   });
   const dismissReset = document.getElementById('dismiss-reset-btn');
   if(dismissReset) dismissReset.onclick = ()=>{ state.lastResetPassword=null; render(); };
+  document.querySelectorAll('[data-remove-att]').forEach(el=>{
+    el.onclick = async ()=>{
+      if(!confirm('Remove this attendance record? This clears both time-in and time-out for that student on this event.')) return;
+      await removeAttendanceRecord(el.dataset.removeAtt);
+      render();
+    };
+  });
+  const bulkResetBtn = document.getElementById('bulk-reset-records-btn');
+  if(bulkResetBtn) bulkResetBtn.onclick = async ()=>{
+    const eventName = state.adminFilterEvent;
+    const dept = state.adminFilterDept;
+    DB.attendance = await fetchKey('attendance', DB.attendance);
+    const toRemove = DB.attendance.filter(a => a.eventName===eventName && (dept==='all' || a.department===dept));
+    if(toRemove.length===0){ render(); return; }
+    if(!confirm(`Reset attendance for ${eventName}${dept!=='all'?` (${dept})`:''}? This permanently removes ${toRemove.length} record${toRemove.length===1?'':'s'} — students will need to scan in again from scratch.`)) return;
+    DB.attendance = DB.attendance.filter(a => !(a.eventName===eventName && (dept==='all' || a.department===dept)));
+    await saveKey('attendance', DB.attendance);
+    render();
+  };
   if(state.adminSubRoute==='profile') attachProfileHandlers();
   wirePasswordToggles();
 }
