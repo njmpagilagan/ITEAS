@@ -257,15 +257,26 @@ function renderShell(innerHtml){
 }
 function attachShellHandlers(){
   document.querySelectorAll('.nav-item[data-sub]').forEach(el=>{
-    el.onclick = ()=>{
+    el.onclick = async ()=>{
       const role = state.currentUser.role;
-      if(role==='student'){ state.studentSubRoute = el.dataset.sub; state.checkinStep='scan'; }
+      const sub = el.dataset.sub;
+      if(role==='student'){ state.studentSubRoute = sub; state.checkinStep='scan'; }
       if(role==='officer'){
-        if(el.dataset.sub !== 'generate'){ stopQrRotation(); state.officerRotating=false; }
-        state.officerSubRoute = el.dataset.sub;
+        if(sub !== 'generate'){ stopQrRotation(); state.officerRotating=false; }
+        state.officerSubRoute = sub;
       }
-      if(role==='admin'){ state.adminSubRoute = el.dataset.sub; }
+      if(role==='admin'){ state.adminSubRoute = sub; }
       state.err=''; state.profileMsg='';
+      // views that show shared records should always reflect what's actually in the database right now,
+      // not just whatever happened to be loaded when this tab was first opened
+      if((role==='student' && sub==='history') || (role==='officer' && sub==='attendees') || (role==='admin' && (sub==='overview' || sub==='records'))){
+        DB.attendance = await fetchKey('attendance', DB.attendance);
+      }
+      if(role==='admin' && (sub==='events' || sub==='departments' || sub==='officers')){
+        DB.events = await fetchKey('events', DB.events);
+        DB.departments = await fetchKey('departments', DB.departments);
+        DB.users = await fetchKey('users', DB.users);
+      }
       render();
     };
   });
@@ -920,6 +931,11 @@ function renderSetupNeeded(){
   </div>`;
 }
 (async function init(){
+  // if the browser restores this page from its back/forward cache (common on mobile after a
+  // "refresh" gesture), force a real reload so data is fetched fresh instead of showing a stale snapshot
+  window.addEventListener('pageshow', function(event){
+    if(event.persisted){ window.location.reload(); }
+  });
   document.getElementById('app').innerHTML = `<div class="center-screen"><p style="color:var(--ink-soft);">Loading…</p></div>`;
   if(!SUPABASE_CONFIGURED){
     document.getElementById('app').innerHTML = renderSetupNeeded();
