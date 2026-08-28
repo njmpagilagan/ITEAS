@@ -56,6 +56,7 @@ function hashPw(pw){
 }
 function uid(prefix){ return prefix+'_'+Math.random().toString(36).slice(2,9); }
 function fmtDate(ts){ return new Date(ts).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
+function normSection(s){ return (s||'').trim().toLowerCase(); }
 
 const DEFAULT_DEPTS = ['CS Department','Business Department','Engineering Department','Arts & Sciences','Nursing Department'];
 const ROTATE_MS = 20000;   // how often the officer's QR auto-refreshes
@@ -393,6 +394,10 @@ async function tryUseToken(rawCode){
     state.err=`This QR is for ${tok.department}. You're registered under ${state.currentUser.department}, so it can't be used to check you in.`;
     render(); return;
   }
+  if(normSection(tok.section) !== normSection(state.currentUser.section)){
+    state.err=`This QR is for section ${tok.section}. You're registered under ${state.currentUser.section}, so it can't be used to check you in.`;
+    render(); return;
+  }
   const u = state.currentUser;
   const ev = DB.events.find(e=>e.id===tok.eventId);
   if(!ev){ state.err='This event no longer exists.'; render(); return; }
@@ -488,13 +493,13 @@ function stopCamera(){
 function stopQrRotation(){
   if(qrRotateTimer){ clearInterval(qrRotateTimer); qrRotateTimer=null; }
 }
-async function generateRotatingToken(eventId, department, phase){
+async function generateRotatingToken(eventId, department, section, phase){
   const token = uid('qr').toUpperCase();
-  DB.tokens[token] = {eventId, department, phase, createdAt: Date.now()};
+  DB.tokens[token] = {eventId, department, section, phase, createdAt: Date.now()};
   // prune this desk's old expired tokens so storage doesn't grow forever
   Object.keys(DB.tokens).forEach(t=>{
     const info = DB.tokens[t];
-    if(info.eventId===eventId && info.department===department && t!==token && (Date.now()-info.createdAt)>TOKEN_TTL_MS){
+    if(info.eventId===eventId && info.department===department && normSection(info.section)===normSection(section) && t!==token && (Date.now()-info.createdAt)>TOKEN_TTL_MS){
       delete DB.tokens[t];
     }
   });
@@ -502,21 +507,21 @@ async function generateRotatingToken(eventId, department, phase){
   state.officerToken = token;
   state.officerTokenCreatedAt = Date.now();
 }
-async function startQrRotation(eventId, department, phase){
+async function startQrRotation(eventId, department, section, phase){
   stopQrRotation();
   lastRenderedQrToken = null;
-  await generateRotatingToken(eventId, department, phase);
+  await generateRotatingToken(eventId, department, section, phase);
   render();
-  qrRotateTimer = setInterval(()=>officerTick(eventId, department, phase), 2000);
+  qrRotateTimer = setInterval(()=>officerTick(eventId, department, section, phase), 2000);
 }
-async function officerTick(eventId, department, phase){
+async function officerTick(eventId, department, section, phase){
   if(!state.officerRotating || !state.officerToken) return;
   // pull the latest attendance log so we can tell if someone just used this code
   DB.attendance = await fetchKey('attendance', DB.attendance);
   const consumed = DB.attendance.some(a => a.tokenUsed === state.officerToken);
   const elapsed = Date.now() - state.officerTokenCreatedAt;
   if(consumed || elapsed >= ROTATE_MS){
-    await generateRotatingToken(eventId, department, phase);
+    await generateRotatingToken(eventId, department, section, phase);
     render(); // full render only when the token actually changes, so the QR redraws just once
     return;
   }
