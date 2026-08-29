@@ -58,6 +58,21 @@ function hashPw(pw){
 function uid(prefix){ return prefix+'_'+Math.random().toString(36).slice(2,9); }
 function fmtDate(ts){ return new Date(ts).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
 function normSection(s){ return (s||'').trim().toLowerCase(); }
+function eventSessionType(ev){ return (ev && ev.sessionType) || 'full'; }
+function attendanceStatusPill(record, ev){
+  const st = eventSessionType(ev);
+  if(st==='am'){
+    return (record.amTimeIn && record.amTimeOut) ? '<span class="pill green">Present</span>' : '<span class="pill gold">Time-in only</span>';
+  }
+  if(st==='pm'){
+    return (record.pmTimeIn && record.pmTimeOut) ? '<span class="pill green">Present</span>' : '<span class="pill gold">Time-in only</span>';
+  }
+  const amDone = record.amTimeIn && record.amTimeOut;
+  const pmDone = record.pmTimeIn && record.pmTimeOut;
+  if(amDone && pmDone) return '<span class="pill green">Present (full day)</span>';
+  if(amDone || pmDone) return '<span class="pill gold">Half day only</span>';
+  return '<span class="pill gold">Incomplete</span>';
+}
 function generateTempPassword(){
   // TEMP-XXXX format: all uppercase (no case-sensitivity confusion when retyped),
   // avoids ambiguous chars (0/O, 1/I/L)
@@ -86,13 +101,14 @@ let state = {
   adminSubRoute:'overview',
   checkinStep:'scan',      // scan | done
   lastPhase:'in',
+  lastSession:'am',
   cameraOpen:false,
   officerActiveEventId:null,
   officerToken:null,
   officerTokenCreatedAt:null,
   officerRotating:false,
   officerPhase:'in',       // 'in' (time-in) or 'out' (time-out)
-  newEventDraft:{name:'', date:'', departments:[...DEFAULT_DEPTS]},
+  newEventDraft:{name:'', date:'', departments:[...DEFAULT_DEPTS], sessionType:'full'},
   newOfficerDraft:{name:'', username:'', password:'', department:DEFAULT_DEPTS[0], section:'', type:'section'},
   adminFilterEvent:'all',
   adminFilterDept:'all',
@@ -365,23 +381,27 @@ function renderCheckin(){
   }
   // done
   const isIn = state.lastPhase === 'in';
+  const sessLabel = (state.lastSession || 'am').toUpperCase();
   return `
   <div class="stamp-wrap">
-    <div class="stamp">${isIn ? 'TIME IN' : 'TIME OUT'}<br>${new Date().toLocaleDateString()}</div>
-    <h2 style="margin-top:24px;">${isIn ? "You're timed in" : "You're timed out"}</h2>
-    <p style="color:var(--ink-soft); text-align:center; max-width:340px;">${isIn ? 'Come back and scan again before you leave to complete your attendance.' : 'Your attendance for this event is now complete.'}</p>
+    <div class="stamp">${sessLabel} ${isIn ? 'TIME IN' : 'TIME OUT'}<br>${new Date().toLocaleDateString()}</div>
+    <h2 style="margin-top:24px;">${isIn ? `You're timed in for ${sessLabel}` : `You're timed out for ${sessLabel}`}</h2>
+    <p style="color:var(--ink-soft); text-align:center; max-width:340px;">${isIn ? 'Come back and scan again before you leave to complete this session.' : 'This session is now complete. If there\'s another session today, scan again when it starts.'}</p>
     <button class="btn-ghost" id="checkin-again-btn" style="margin-top:14px;">Back to check-in</button>
   </div>`;
 }
 function renderHistory(){
-  const mine = DB.attendance.filter(a=>a.studentId===state.currentUser.id).sort((a,b)=>(b.timeIn||0)-(a.timeIn||0));
+  const mine = DB.attendance.filter(a=>a.studentId===state.currentUser.id).sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0));
   if(mine.length===0) return `<div class="page-head"><h1>My Attendance</h1></div><div class="empty">No check-ins yet — scan a QR code at an event to get started.</div>`;
   return `
   <div class="page-head"><h1>My Attendance</h1><p>${mine.length} event${mine.length>1?'s':''} recorded this year.</p></div>
   <div class="card" style="padding:0;">
     <table>
-      <tr><th>Event</th><th>Department</th><th>Time in</th><th>Time out</th><th>Status</th></tr>
-      ${mine.map(a=>`<tr><td>${a.eventName}</td><td><span class="badge-dept">${a.department}</span></td><td>${a.timeIn?fmtDate(a.timeIn):'—'}</td><td>${a.timeOut?fmtDate(a.timeOut):'—'}</td><td>${a.timeIn && a.timeOut ? '<span class="pill green">Present</span>' : '<span class="pill gold">Time-in only</span>'}</td></tr>`).join('')}
+      <tr><th>Event</th><th>Department</th><th>AM in</th><th>AM out</th><th>PM in</th><th>PM out</th><th>Status</th></tr>
+      ${mine.map(a=>{
+        const ev = DB.events.find(e=>e.id===a.eventId);
+        return `<tr><td>${a.eventName}</td><td><span class="badge-dept">${a.department}</span></td><td>${a.amTimeIn?fmtDate(a.amTimeIn):'—'}</td><td>${a.amTimeOut?fmtDate(a.amTimeOut):'—'}</td><td>${a.pmTimeIn?fmtDate(a.pmTimeIn):'—'}</td><td>${a.pmTimeOut?fmtDate(a.pmTimeOut):'—'}</td><td>${attendanceStatusPill(a, ev)}</td></tr>`;
+      }).join('')}
     </table>
   </div>`;
 }
@@ -450,23 +470,27 @@ async function tryUseToken(rawCode){
   // pull the latest attendance log too, so duplicate/order checks reflect other devices
   DB.attendance = await fetchKey('attendance', DB.attendance);
   let record = DB.attendance.find(a=>a.eventId===ev.id && a.studentId===u.id);
+  const session = tok.session === 'pm' ? 'pm' : 'am';
+  const sessLabel = session.toUpperCase();
+  const inField = session + 'TimeIn', outField = session + 'TimeOut';
   if(tok.phase==='out'){
-    if(!record || !record.timeIn){ state.err='You need to time in first before you can time out.'; render(); return; }
-    if(record.timeOut){ state.err='You already timed out for this event.'; render(); return; }
-    record.timeOut = Date.now();
+    if(!record || !record[inField]){ state.err=`You need to time in for ${sessLabel} first before you can time out.`; render(); return; }
+    if(record[outField]){ state.err=`You already timed out for ${sessLabel} on this event.`; render(); return; }
+    record[outField] = Date.now();
     record.tokenUsed = code;
   } else {
-    if(record && record.timeIn){ state.err='You already timed in for this event.'; render(); return; }
+    if(record && record[inField]){ state.err=`You already timed in for ${sessLabel} on this event.`; render(); return; }
     if(!record){
-      record = {id: uid('att'), eventId:ev.id, eventName:ev.name, department:u.department, studentId:u.id, studentName:u.name, section:u.section, timeIn:null, timeOut:null, tokenUsed:null};
+      record = {id: uid('att'), eventId:ev.id, eventName:ev.name, department:u.department, studentId:u.id, studentName:u.name, section:u.section, amTimeIn:null, amTimeOut:null, pmTimeIn:null, pmTimeOut:null, tokenUsed:null};
       DB.attendance.push(record);
     }
-    record.timeIn = Date.now();
+    record[inField] = Date.now();
     record.tokenUsed = code;
   }
   await saveKey('attendance', DB.attendance);
   state.checkinStep = 'done';
   state.lastPhase = tok.phase;
+  state.lastSession = session;
   state.err = '';
   stopCamera();
   state.cameraOpen = false;
@@ -585,6 +609,9 @@ function renderOfficer(){
 }
 function renderOfficerGenerate(myEvents){
   const activeId = state.officerActiveEventId || (myEvents[0] && myEvents[0].id);
+  const activeEvent = myEvents.find(e=>e.id===activeId);
+  const evSession = eventSessionType(activeEvent);
+  const session = evSession==='full' ? (state.officerSession || 'am') : evSession;
   const remaining = state.officerRotating && state.officerTokenCreatedAt
     ? Math.max(0, Math.ceil((ROTATE_MS - (Date.now()-state.officerTokenCreatedAt))/1000)) : null;
   const mySection = state.currentUser.section;
@@ -598,6 +625,15 @@ function renderOfficerGenerate(myEvents){
         ${myEvents.map(e=>`<option value="${e.id}" ${e.id===activeId?'selected':''}>${e.name} — ${e.date}</option>`).join('')}
       </select>
     </div>
+    ${evSession==='full' ? `
+    <div class="field">
+      <label>Session</label>
+      <div class="auth-tabs" style="margin-bottom:0;">
+        <div class="auth-tab session-tab ${session==='am'?'active':''}" data-session="am" style="${state.officerRotating?'pointer-events:none; opacity:0.6;':''}">AM</div>
+        <div class="auth-tab session-tab ${session==='pm'?'active':''}" data-session="pm" style="${state.officerRotating?'pointer-events:none; opacity:0.6;':''}">PM</div>
+      </div>
+    </div>
+    ` : `<p class="hint" style="margin-top:-6px; margin-bottom:14px;">This event is ${evSession.toUpperCase()}-only — every code here is for the ${evSession.toUpperCase()} session.</p>`}
     <div class="field">
       <label>Which check-in is this?</label>
       <div class="auth-tabs" style="margin-bottom:0;">
@@ -614,7 +650,7 @@ function renderOfficerGenerate(myEvents){
   </div>
   ${state.officerRotating && state.officerToken ? `
     <div class="qr-box" style="max-width:320px; margin-top:20px;">
-      <div class="pill ${state.officerPhase==='in'?'green':'gold'}" style="margin-bottom:12px;">${state.officerPhase==='in'?'TIME IN':'TIME OUT'}</div>
+      <div class="pill ${state.officerPhase==='in'?'green':'gold'}" style="margin-bottom:12px;">${session.toUpperCase()} ${state.officerPhase==='in'?'TIME IN':'TIME OUT'}</div>
       <div id="qr-render"></div>
       <div class="code-text">${state.officerToken}</div>
       <div class="pill gold" id="qr-countdown" style="margin-top:12px;">Refreshes in ${remaining}s</div>
@@ -1005,11 +1041,21 @@ function renderAdminOverview(){
 }
 function renderAdminEvents(){
   const d = state.newEventDraft;
+  const sessionType = d.sessionType || 'full';
   return `
   <div class="page-head"><h1>Manage Events</h1><p>Create the events officers will generate QR codes for.</p></div>
   <div class="card" style="max-width:520px; margin-bottom:24px;">
     <div class="field"><label>Event name</label><input id="ev-name" value="${d.name}" placeholder="Foundation Week 2026"></div>
     <div class="field"><label>Date</label><input id="ev-date" type="date" value="${d.date}"></div>
+    <div class="field">
+      <label>Duration</label>
+      <div class="auth-tabs" style="margin-bottom:0;">
+        <div class="auth-tab ev-session-tab ${sessionType==='full'?'active':''}" data-session="full">Whole day (AM + PM)</div>
+        <div class="auth-tab ev-session-tab ${sessionType==='am'?'active':''}" data-session="am">AM only</div>
+        <div class="auth-tab ev-session-tab ${sessionType==='pm'?'active':''}" data-session="pm">PM only</div>
+      </div>
+      <p class="hint">${sessionType==='full' ? 'Students scan 4 times: AM time in/out, then PM time in/out.' : `Students scan 2 times: ${sessionType.toUpperCase()} time in and time out.`}</p>
+    </div>
     <div class="field">
       <label>Participating departments</label>
       ${DB.departments.map(dep=>`
@@ -1023,8 +1069,8 @@ function renderAdminEvents(){
   <div class="section-title">All events</div>
   <div class="card" style="padding:0;">
     <table>
-      <tr><th>Event</th><th>Date</th><th>Departments</th><th></th></tr>
-      ${DB.events.map(e=>`<tr><td>${e.name}</td><td>${e.date||'—'}</td><td>${e.departments.map(dp=>`<span class="badge-dept" style="margin-right:4px;">${dp}</span>`).join('')}</td><td><button class="btn-danger" data-del-event="${e.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="4" class="empty">No events yet.</td></tr>`}
+      <tr><th>Event</th><th>Date</th><th>Duration</th><th>Departments</th><th></th></tr>
+      ${DB.events.map(e=>`<tr><td>${e.name}</td><td>${e.date||'—'}</td><td>${e.sessionType==='am'?'AM only':e.sessionType==='pm'?'PM only':'Whole day'}</td><td>${e.departments.map(dp=>`<span class="badge-dept" style="margin-right:4px;">${dp}</span>`).join('')}</td><td><button class="btn-danger" data-del-event="${e.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="5" class="empty">No events yet.</td></tr>`}
     </table>
   </div>`;
 }
@@ -1208,13 +1254,19 @@ function attachAdminHandlers(){
   if(nameEl) nameEl.oninput = ()=>{ state.newEventDraft.name = nameEl.value; };
   const dateEl = document.getElementById('ev-date');
   if(dateEl) dateEl.oninput = ()=>{ state.newEventDraft.date = dateEl.value; };
+  document.querySelectorAll('.ev-session-tab').forEach(el=>{
+    el.onclick = ()=>{
+      state.newEventDraft.sessionType = el.dataset.session;
+      render();
+    };
+  });
   const createEv = document.getElementById('create-event-btn');
   if(createEv) createEv.onclick = async ()=>{
     const d = state.newEventDraft;
     if(!d.name || d.departments.length===0){ state.err='Give the event a name and at least one department.'; render(); return; }
-    DB.events.push({id: uid('evt'), name:d.name, date:d.date, departments:[...d.departments]});
+    DB.events.push({id: uid('evt'), name:d.name, date:d.date, departments:[...d.departments], sessionType: d.sessionType || 'full'});
     await saveKey('events', DB.events);
-    state.newEventDraft = {name:'', date:'', departments:[...DB.departments]};
+    state.newEventDraft = {name:'', date:'', departments:[...DB.departments], sessionType:'full'};
     state.err='';
     render();
   };
