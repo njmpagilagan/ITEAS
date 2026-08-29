@@ -160,7 +160,7 @@ function wirePasswordToggles(){
 }
 function renderLogin(){
   const isAdminPage = (typeof PAGE_MODE !== 'undefined' && PAGE_MODE === 'admin');
-  const tab = isAdminPage ? 'admin' : (['student','officer','ssg'].includes(state.authTab) ? state.authTab : 'student');
+  const tab = isAdminPage ? 'admin' : (['student','officer'].includes(state.authTab) ? state.authTab : 'student');
   return `
   <div class="login-wrap">
     <div class="login-hero">
@@ -179,9 +179,8 @@ function renderLogin(){
         <div class="auth-tabs">
           <div class="auth-tab ${tab==='student'?'active':''}" data-tab="student">Student</div>
           <div class="auth-tab ${tab==='officer'?'active':''}" data-tab="officer">Officer</div>
-          <div class="auth-tab ${tab==='ssg'?'active':''}" data-tab="ssg">SSG</div>
         </div>`}
-        ${tab==='student' ? renderStudentAuth() : tab==='officer' ? renderOfficerAuth() : tab==='ssg' ? renderSsgAuth() : renderAdminAuth()}
+        ${tab==='student' ? renderStudentAuth() : tab==='officer' ? renderOfficerAuth() : renderAdminAuth()}
         ${state.err ? `<div class="err">${state.err}</div>` : ''}
       </div>
     </div>
@@ -215,15 +214,7 @@ function renderOfficerAuth(){
     <div class="field"><label>Officer username</label><input id="o-user" placeholder="set by the system admin"></div>
     ${pwField('o-pw', 'Password', '••••••••')}
     <button class="btn-primary" style="width:100%" id="officer-login-btn">Log in</button>
-    <div class="hint">Officer accounts are created by the system admin and tied to one department and section.</div>
-  `;
-}
-function renderSsgAuth(){
-  return `
-    <div class="field"><label>SSG username</label><input id="g-user" placeholder="set by the system admin"></div>
-    ${pwField('g-pw', 'Password', '••••••••')}
-    <button class="btn-primary" style="width:100%" id="ssg-login-btn">Log in</button>
-    <div class="hint">SSG accounts are created by the system admin and can take attendance across every department and section.</div>
+    <div class="hint">Officer accounts are created by the system admin — department officers cover one section, SSG officers cover every department and section.</div>
   `;
 }
 function renderAdminAuth(){
@@ -276,17 +267,8 @@ function attachLoginHandlers(){
     const pw = document.getElementById('o-pw').value;
     DB.users = await fetchKey('users', DB.users);
     const u = DB.users[user];
-    if(!u || u.role!=='officer' || u.passwordHash!==hashPw(pw)){ state.err='Incorrect username or password.'; render(); return; }
-    state.currentUser = u; state.route='officer'; state.err=''; render();
-  };
-  const gLogin = document.getElementById('ssg-login-btn');
-  if(gLogin) gLogin.onclick = async ()=>{
-    const user = document.getElementById('g-user').value.trim();
-    const pw = document.getElementById('g-pw').value;
-    DB.users = await fetchKey('users', DB.users);
-    const u = DB.users[user];
-    if(!u || u.role!=='ssg' || u.passwordHash!==hashPw(pw)){ state.err='Incorrect username or password.'; render(); return; }
-    state.currentUser = u; state.route='ssg'; state.err=''; render();
+    if(!u || (u.role!=='officer' && u.role!=='ssg') || u.passwordHash!==hashPw(pw)){ state.err='Incorrect username or password.'; render(); return; }
+    state.currentUser = u; state.route = u.role; state.err=''; render();
   };
   const aLogin = document.getElementById('admin-login-btn');
   if(aLogin) aLogin.onclick = async ()=>{
