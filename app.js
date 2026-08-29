@@ -237,9 +237,10 @@ function attachLoginHandlers(){
     if(secSel) secSel.innerHTML = sectionOptions(rDept.value, null);
   };
   const sLogin = document.getElementById('student-login-btn');
-  if(sLogin) sLogin.onclick = ()=>{
+  if(sLogin) sLogin.onclick = async ()=>{
     const id = document.getElementById('s-id').value.trim();
     const pw = document.getElementById('s-pw').value;
+    DB.users = await fetchKey('users', DB.users); // always check against the current account, not whatever loaded when this tab opened
     const u = DB.users[id];
     if(!u || u.role!=='student' || u.passwordHash!==hashPw(pw)){ state.err='Incorrect student ID or password.'; render(); return; }
     state.currentUser = u; state.route='student'; state.err=''; render();
@@ -252,23 +253,26 @@ function attachLoginHandlers(){
     const department = document.getElementById('r-dept').value;
     const pw = document.getElementById('r-pw').value;
     if(!name || !id || !section || !department || !pw){ state.err='Please fill in every field — if Section only shows "No sections yet," ask the admin to add one for your department first.'; render(); return; }
+    DB.users = await fetchKey('users', DB.users);
     if(DB.users[id]){ state.err='An account with that student ID already exists.'; render(); return; }
     DB.users[id] = {id, role:'student', name, section, department, passwordHash:hashPw(pw)};
     await saveKey('users', DB.users);
     state.currentUser = DB.users[id]; state.route='student'; state.err=''; render();
   };
   const oLogin = document.getElementById('officer-login-btn');
-  if(oLogin) oLogin.onclick = ()=>{
+  if(oLogin) oLogin.onclick = async ()=>{
     const user = document.getElementById('o-user').value.trim();
     const pw = document.getElementById('o-pw').value;
+    DB.users = await fetchKey('users', DB.users);
     const u = DB.users[user];
     if(!u || u.role!=='officer' || u.passwordHash!==hashPw(pw)){ state.err='Incorrect username or password.'; render(); return; }
     state.currentUser = u; state.route='officer'; state.err=''; render();
   };
   const aLogin = document.getElementById('admin-login-btn');
-  if(aLogin) aLogin.onclick = ()=>{
+  if(aLogin) aLogin.onclick = async ()=>{
     const user = document.getElementById('a-user').value.trim();
     const pw = document.getElementById('a-pw').value;
+    DB.users = await fetchKey('users', DB.users);
     const u = DB.users[user];
     if(!u || u.role!=='admin' || u.passwordHash!==hashPw(pw)){ state.err='Incorrect username or password.'; render(); return; }
     state.currentUser = u; state.route='admin'; state.err=''; render();
