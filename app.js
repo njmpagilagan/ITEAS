@@ -82,6 +82,7 @@ let state = {
   err:'',
   studentSubRoute:'checkin',
   officerSubRoute:'generate',
+  ssgSubRoute:'generate',
   adminSubRoute:'overview',
   checkinStep:'scan',      // scan | done
   lastPhase:'in',
@@ -92,7 +93,7 @@ let state = {
   officerRotating:false,
   officerPhase:'in',       // 'in' (time-in) or 'out' (time-out)
   newEventDraft:{name:'', date:'', departments:[...DEFAULT_DEPTS]},
-  newOfficerDraft:{name:'', username:'', password:'', department:DEFAULT_DEPTS[0], section:''},
+  newOfficerDraft:{name:'', username:'', password:'', department:DEFAULT_DEPTS[0], section:'', type:'department'},
   adminFilterEvent:'all',
   adminFilterDept:'all',
   sectionsFilterDept:'',
@@ -133,6 +134,7 @@ function render(){
   if(state.route==='login'){ app.innerHTML = renderLogin(); attachLoginHandlers(); return; }
   if(state.route==='student'){ app.innerHTML = renderShell(renderStudent()); attachShellHandlers(); attachStudentHandlers(); return; }
   if(state.route==='officer'){ app.innerHTML = renderShell(renderOfficer()); attachShellHandlers(); attachOfficerHandlers(); return; }
+  if(state.route==='ssg'){ app.innerHTML = renderShell(renderSsg()); attachShellHandlers(); attachSsgHandlers(); return; }
   if(state.route==='admin'){ app.innerHTML = renderShell(renderAdmin()); attachShellHandlers(); attachAdminHandlers(); return; }
 }
 
@@ -158,7 +160,7 @@ function wirePasswordToggles(){
 }
 function renderLogin(){
   const isAdminPage = (typeof PAGE_MODE !== 'undefined' && PAGE_MODE === 'admin');
-  const tab = isAdminPage ? 'admin' : (state.authTab === 'admin' ? 'student' : state.authTab);
+  const tab = isAdminPage ? 'admin' : (['student','officer','ssg'].includes(state.authTab) ? state.authTab : 'student');
   return `
   <div class="login-wrap">
     <div class="login-hero">
@@ -172,13 +174,14 @@ function renderLogin(){
     <div class="login-form-panel">
       <div class="login-form-inner">
         <h2 class="form-heading">${isAdminPage ? 'Admin sign in' : 'Sign in'}</h2>
-        <p class="form-sub">${isAdminPage ? 'Restricted access — system admin only.' : 'Check in to an event, or open your department desk.'}</p>
+        <p class="form-sub">${isAdminPage ? 'Restricted access — system admin only.' : 'Check in to an event, or open your desk.'}</p>
         ${isAdminPage ? '' : `
         <div class="auth-tabs">
           <div class="auth-tab ${tab==='student'?'active':''}" data-tab="student">Student</div>
           <div class="auth-tab ${tab==='officer'?'active':''}" data-tab="officer">Officer</div>
+          <div class="auth-tab ${tab==='ssg'?'active':''}" data-tab="ssg">SSG</div>
         </div>`}
-        ${tab==='student' ? renderStudentAuth() : tab==='officer' ? renderOfficerAuth() : renderAdminAuth()}
+        ${tab==='student' ? renderStudentAuth() : tab==='officer' ? renderOfficerAuth() : tab==='ssg' ? renderSsgAuth() : renderAdminAuth()}
         ${state.err ? `<div class="err">${state.err}</div>` : ''}
       </div>
     </div>
@@ -212,7 +215,15 @@ function renderOfficerAuth(){
     <div class="field"><label>Officer username</label><input id="o-user" placeholder="set by the system admin"></div>
     ${pwField('o-pw', 'Password', '••••••••')}
     <button class="btn-primary" style="width:100%" id="officer-login-btn">Log in</button>
-    <div class="hint">Officer accounts are created by the system admin and tied to one department.</div>
+    <div class="hint">Officer accounts are created by the system admin and tied to one department and section.</div>
+  `;
+}
+function renderSsgAuth(){
+  return `
+    <div class="field"><label>SSG username</label><input id="g-user" placeholder="set by the system admin"></div>
+    ${pwField('g-pw', 'Password', '••••••••')}
+    <button class="btn-primary" style="width:100%" id="ssg-login-btn">Log in</button>
+    <div class="hint">SSG accounts are created by the system admin and can take attendance across every department and section.</div>
   `;
 }
 function renderAdminAuth(){
@@ -268,6 +279,15 @@ function attachLoginHandlers(){
     if(!u || u.role!=='officer' || u.passwordHash!==hashPw(pw)){ state.err='Incorrect username or password.'; render(); return; }
     state.currentUser = u; state.route='officer'; state.err=''; render();
   };
+  const gLogin = document.getElementById('ssg-login-btn');
+  if(gLogin) gLogin.onclick = async ()=>{
+    const user = document.getElementById('g-user').value.trim();
+    const pw = document.getElementById('g-pw').value;
+    DB.users = await fetchKey('users', DB.users);
+    const u = DB.users[user];
+    if(!u || u.role!=='ssg' || u.passwordHash!==hashPw(pw)){ state.err='Incorrect username or password.'; render(); return; }
+    state.currentUser = u; state.route='ssg'; state.err=''; render();
+  };
   const aLogin = document.getElementById('admin-login-btn');
   if(aLogin) aLogin.onclick = async ()=>{
     const user = document.getElementById('a-user').value.trim();
@@ -286,9 +306,10 @@ function renderShell(innerHtml){
   const role = u.role;
   const items = role==='student' ? [['checkin','Check In'],['history','My Attendance'],['profile','My Profile']]
               : role==='officer' ? [['generate','Generate QR'],['attendees','Attendees'],['profile','My Profile']]
+              : role==='ssg' ? [['generate','Generate QR'],['attendees','Attendees'],['profile','My Profile']]
               : [['overview','Overview'],['events','Manage Events'],['departments','Departments'],['sections','Sections'],['students','Manage Students'],['officers','Manage Officers'],['records','All Records'],['profile','My Profile']];
-  const sub = role==='student' ? state.studentSubRoute : role==='officer' ? state.officerSubRoute : state.adminSubRoute;
-  const roleLabel = role==='admin'?'System Admin':role==='officer'?'Department Officer':'Student';
+  const sub = role==='student' ? state.studentSubRoute : role==='officer' ? state.officerSubRoute : role==='ssg' ? state.ssgSubRoute : state.adminSubRoute;
+  const roleLabel = role==='admin'?'System Admin':role==='officer'?'Department Officer':role==='ssg'?'SSG Officer':'Student';
   return `
   <div class="shell">
     <div class="sidebar">
@@ -317,11 +338,15 @@ function attachShellHandlers(){
         if(sub !== 'generate'){ stopQrRotation(); state.officerRotating=false; }
         state.officerSubRoute = sub;
       }
+      if(role==='ssg'){
+        if(sub !== 'generate'){ stopQrRotation(); state.officerRotating=false; }
+        state.ssgSubRoute = sub;
+      }
       if(role==='admin'){ state.adminSubRoute = sub; }
       state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null;
       // views that show shared records should always reflect what's actually in the database right now,
       // not just whatever happened to be loaded when this tab was first opened
-      if((role==='student' && sub==='history') || (role==='officer' && sub==='attendees') || (role==='admin' && (sub==='overview' || sub==='records'))){
+      if((role==='student' && sub==='history') || ((role==='officer'||role==='ssg') && sub==='attendees') || (role==='admin' && (sub==='overview' || sub==='records'))){
         DB.attendance = await fetchKey('attendance', DB.attendance);
       }
       if(role==='admin' && (sub==='events' || sub==='departments' || sub==='officers')){
@@ -421,13 +446,15 @@ async function tryUseToken(rawCode){
     state.err='This QR code has expired. It refreshes often — ask the officer to show the current one.';
     render(); return;
   }
-  if(tok.department !== state.currentUser.department){
-    state.err=`This QR is for ${tok.department}. You're registered under ${state.currentUser.department}, so it can't be used to check you in.`;
-    render(); return;
-  }
-  if(normSection(tok.section) !== normSection(state.currentUser.section)){
-    state.err=`This QR is for section ${tok.section}. You're registered under ${state.currentUser.section}, so it can't be used to check you in.`;
-    render(); return;
+  if(tok.scope !== 'ssg'){
+    if(tok.department !== state.currentUser.department){
+      state.err=`This QR is for ${tok.department}. You're registered under ${state.currentUser.department}, so it can't be used to check you in.`;
+      render(); return;
+    }
+    if(normSection(tok.section) !== normSection(state.currentUser.section)){
+      state.err=`This QR is for section ${tok.section}. You're registered under ${state.currentUser.section}, so it can't be used to check you in.`;
+      render(); return;
+    }
   }
   const u = state.currentUser;
   const ev = DB.events.find(e=>e.id===tok.eventId);
@@ -443,7 +470,7 @@ async function tryUseToken(rawCode){
   } else {
     if(record && record.timeIn){ state.err='You already timed in for this event.'; render(); return; }
     if(!record){
-      record = {id: uid('att'), eventId:ev.id, eventName:ev.name, department:tok.department, studentId:u.id, studentName:u.name, section:u.section, timeIn:null, timeOut:null, tokenUsed:null};
+      record = {id: uid('att'), eventId:ev.id, eventName:ev.name, department:u.department, studentId:u.id, studentName:u.name, section:u.section, timeIn:null, timeOut:null, tokenUsed:null};
       DB.attendance.push(record);
     }
     record.timeIn = Date.now();
@@ -524,9 +551,9 @@ function stopCamera(){
 function stopQrRotation(){
   if(qrRotateTimer){ clearInterval(qrRotateTimer); qrRotateTimer=null; }
 }
-async function generateRotatingToken(eventId, department, section, phase){
+async function generateRotatingToken(eventId, department, section, phase, scope){
   const token = uid('qr').toUpperCase();
-  DB.tokens[token] = {eventId, department, section, phase, createdAt: Date.now()};
+  DB.tokens[token] = {eventId, department, section, phase, scope: scope || 'department', createdAt: Date.now()};
   // prune this desk's old expired tokens so storage doesn't grow forever
   Object.keys(DB.tokens).forEach(t=>{
     const info = DB.tokens[t];
@@ -538,21 +565,21 @@ async function generateRotatingToken(eventId, department, section, phase){
   state.officerToken = token;
   state.officerTokenCreatedAt = Date.now();
 }
-async function startQrRotation(eventId, department, section, phase){
+async function startQrRotation(eventId, department, section, phase, scope){
   stopQrRotation();
   lastRenderedQrToken = null;
-  await generateRotatingToken(eventId, department, section, phase);
+  await generateRotatingToken(eventId, department, section, phase, scope);
   render();
-  qrRotateTimer = setInterval(()=>officerTick(eventId, department, section, phase), 2000);
+  qrRotateTimer = setInterval(()=>officerTick(eventId, department, section, phase, scope), 2000);
 }
-async function officerTick(eventId, department, section, phase){
+async function officerTick(eventId, department, section, phase, scope){
   if(!state.officerRotating || !state.officerToken) return;
   // pull the latest attendance log so we can tell if someone just used this code
   DB.attendance = await fetchKey('attendance', DB.attendance);
   const consumed = DB.attendance.some(a => a.tokenUsed === state.officerToken);
   const elapsed = Date.now() - state.officerTokenCreatedAt;
   if(consumed || elapsed >= ROTATE_MS){
-    await generateRotatingToken(eventId, department, section, phase);
+    await generateRotatingToken(eventId, department, section, phase, scope);
     render(); // full render only when the token actually changes, so the QR redraws just once
     return;
   }
@@ -647,6 +674,154 @@ async function removeAttendanceRecord(recordId){
   DB.attendance = DB.attendance.filter(a=>a.id!==recordId);
   await saveKey('attendance', DB.attendance);
 }
+
+/* ---------------- SSG (all-department attendance) ---------------- */
+function renderSsg(){
+  const allEvents = DB.events;
+  if(state.ssgSubRoute==='generate') return renderSsgGenerate(allEvents);
+  if(state.ssgSubRoute==='attendees') return renderSsgAttendees(allEvents);
+  return renderProfile();
+}
+function renderSsgGenerate(allEvents){
+  const activeId = state.officerActiveEventId || (allEvents[0] && allEvents[0].id);
+  const remaining = state.officerRotating && state.officerTokenCreatedAt
+    ? Math.max(0, Math.ceil((ROTATE_MS - (Date.now()-state.officerTokenCreatedAt))/1000)) : null;
+  return `
+  <div class="page-head"><h1>Generate check-in QR</h1><p><span class="pill gold">SSG — all departments &amp; sections</span></p></div>
+  ${allEvents.length===0 ? `<div class="empty">No events have been set up yet. Ask the system admin to add one.</div>` : `
+  <div class="card" style="max-width:480px;">
+    <div class="field">
+      <label>Event</label>
+      <select id="officer-event-select" ${state.officerRotating?'disabled':''}>
+        ${allEvents.map(e=>`<option value="${e.id}" ${e.id===activeId?'selected':''}>${e.name} — ${e.date}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field">
+      <label>Which check-in is this?</label>
+      <div class="auth-tabs" style="margin-bottom:0;">
+        <div class="auth-tab phase-tab ${state.officerPhase==='in'?'active':''}" data-phase="in" style="${state.officerRotating?'pointer-events:none; opacity:0.6;':''}">Before event (time in)</div>
+        <div class="auth-tab phase-tab ${state.officerPhase==='out'?'active':''}" data-phase="out" style="${state.officerRotating?'pointer-events:none; opacity:0.6;':''}">Before they leave (time out)</div>
+      </div>
+    </div>
+    ${!state.officerRotating ? `
+      <button class="btn-gold" style="width:100%; margin-top:16px;" id="start-qr-btn">Start live check-in</button>
+      <p class="hint">Any student from any department or section can use this code — it's not restricted like a department desk's. It refreshes the instant someone checks in, and also on its own every ${ROTATE_MS/1000}s if idle.</p>
+    ` : `
+      <button class="btn-ghost" style="width:100%; margin-top:16px;" id="stop-qr-btn">Stop live check-in</button>
+    `}
+  </div>
+  ${state.officerRotating && state.officerToken ? `
+    <div class="qr-box" style="max-width:320px; margin-top:20px;">
+      <div class="pill ${state.officerPhase==='in'?'green':'gold'}" style="margin-bottom:12px;">${state.officerPhase==='in'?'TIME IN':'TIME OUT'}</div>
+      <div id="qr-render"></div>
+      <div class="code-text">${state.officerToken}</div>
+      <div class="pill gold" id="qr-countdown" style="margin-top:12px;">Refreshes in ${remaining}s</div>
+      <p style="font-size:12px; color:var(--ink-soft); margin-top:12px;">Display this on a screen at your station. It updates itself as students check in — keep the tab open.</p>
+    </div>
+  ` : ''}
+  `}`;
+}
+function renderSsgAttendees(allEvents){
+  const activeId = state.officerActiveEventId || (allEvents[0] && allEvents[0].id);
+  const ev = allEvents.find(e=>e.id===activeId);
+  const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id).sort((a,b)=>(b.timeIn||0)-(a.timeIn||0)) : [];
+  const complete = rows.filter(r=>r.timeIn && r.timeOut).length;
+  return `
+  <div class="page-head"><h1>Attendees</h1><p>Live list across every department and section for this event.</p></div>
+  ${allEvents.length===0 ? `<div class="empty">No events yet.</div>` : `
+  <div class="card" style="max-width:300px; margin-bottom:18px;">
+    <div class="field" style="margin-bottom:0;">
+      <label>Event</label>
+      <select id="officer-att-event-select">
+        ${allEvents.map(e=>`<option value="${e.id}" ${e.id===activeId?'selected':''}>${e.name}</option>`).join('')}
+      </select>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="stat"><div class="num">${rows.length}</div><div class="lbl">Timed in</div></div>
+    <div class="stat"><div class="num">${complete}</div><div class="lbl">Completed (in &amp; out)</div></div>
+  </div>
+  <div style="margin-bottom:18px;">
+    <button class="btn-danger" id="reset-event-attendance-btn" ${rows.length===0?'disabled':''}>Reset attendance for this event (${rows.length})</button>
+    <p class="hint" style="margin-top:8px;">Clears all check-ins across every department for this event — students will need to scan in again from scratch.</p>
+  </div>
+  <div class="card" style="padding:0;">
+    <table id="officer-att-table">
+      <tr><th>Student</th><th>Department</th><th>Section</th><th>Time in</th><th>Time out</th><th>Status</th><th></th></tr>
+      ${rows.map(r=>`<tr><td>${r.studentName}</td><td><span class="badge-dept">${r.department}</span></td><td>${r.section}</td><td>${r.timeIn?fmtDate(r.timeIn):'—'}</td><td>${r.timeOut?fmtDate(r.timeOut):'—'}</td><td>${r.timeIn && r.timeOut ? '<span class="pill green">Present</span>' : '<span class="pill gold">Time-in only</span>'}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="7" class="empty">No check-ins yet for this event.</td></tr>`}
+    </table>
+  </div>
+  `}`;
+}
+function attachSsgHandlers(){
+  const sel = document.getElementById('officer-event-select');
+  if(sel) sel.onchange = ()=>{
+    stopQrRotation();
+    state.officerRotating = false;
+    state.officerToken = null;
+    lastRenderedQrToken = null;
+    state.officerActiveEventId = sel.value;
+    render();
+  };
+  const start = document.getElementById('start-qr-btn');
+  if(start) start.onclick = async ()=>{
+    const eventId = document.getElementById('officer-event-select').value;
+    state.officerActiveEventId = eventId;
+    state.officerRotating = true;
+    await startQrRotation(eventId, null, null, state.officerPhase, 'ssg');
+  };
+  document.querySelectorAll('.phase-tab').forEach(el=>{
+    el.onclick = ()=>{
+      if(state.officerRotating) return;
+      state.officerPhase = el.dataset.phase;
+      render();
+    };
+  });
+  const stop = document.getElementById('stop-qr-btn');
+  if(stop) stop.onclick = ()=>{
+    stopQrRotation();
+    state.officerRotating = false;
+    state.officerToken = null;
+    lastRenderedQrToken = null;
+    render();
+  };
+  const attSel = document.getElementById('officer-att-event-select');
+  if(attSel) attSel.onchange = ()=>{ state.officerActiveEventId = attSel.value; render(); };
+  if(state.officerRotating && state.officerToken && lastRenderedQrToken !== state.officerToken){
+    setTimeout(()=>{
+      const holder = document.getElementById('qr-render');
+      if(!holder) return;
+      if(window.QRCode){
+        holder.innerHTML = '';
+        new QRCode(holder, {text: state.officerToken, width:200, height:200, colorDark:'#1B2A4A', colorLight:'#ffffff'});
+        lastRenderedQrToken = state.officerToken;
+      } else {
+        holder.innerHTML = '<p style="font-size:12px; color:var(--danger);">QR image failed to load — students can still use the code below.</p>';
+      }
+    }, 30);
+  }
+  document.querySelectorAll('[data-remove-att]').forEach(el=>{
+    el.onclick = async ()=>{
+      if(!confirm('Remove this attendance record? The student will need to scan again from scratch.')) return;
+      await removeAttendanceRecord(el.dataset.removeAtt);
+      render();
+    };
+  });
+  const resetEventBtn = document.getElementById('reset-event-attendance-btn');
+  if(resetEventBtn) resetEventBtn.onclick = async ()=>{
+    const eventSelect = document.getElementById('officer-att-event-select');
+    const eventId = eventSelect ? eventSelect.value : state.officerActiveEventId;
+    if(!eventId) return;
+    DB.attendance = await fetchKey('attendance', DB.attendance);
+    const toRemove = DB.attendance.filter(a => a.eventId===eventId);
+    if(toRemove.length===0){ render(); return; }
+    if(!confirm(`Reset attendance for this event? This permanently removes ${toRemove.length} record${toRemove.length===1?'':'s'} across every department — students will need to scan in again from scratch.`)) return;
+    DB.attendance = DB.attendance.filter(a => a.eventId!==eventId);
+    await saveKey('attendance', DB.attendance);
+    render();
+  };
+  if(state.ssgSubRoute==='profile') attachProfileHandlers();
+}
 function attachOfficerHandlers(){
   const sel = document.getElementById('officer-event-select');
   if(sel) sel.onchange = ()=>{
@@ -662,7 +837,7 @@ function attachOfficerHandlers(){
     const eventId = document.getElementById('officer-event-select').value;
     state.officerActiveEventId = eventId;
     state.officerRotating = true;
-    await startQrRotation(eventId, state.currentUser.department, state.currentUser.section, state.officerPhase);
+    await startQrRotation(eventId, state.currentUser.department, state.currentUser.section, state.officerPhase, 'department');
   };
   document.querySelectorAll('.phase-tab').forEach(el=>{
     el.onclick = ()=>{
@@ -723,7 +898,7 @@ function attachOfficerHandlers(){
 /* ---------------- PROFILE (shared by all roles) ---------------- */
 function renderProfile(){
   const u = state.currentUser;
-  const roleLabel = u.role==='admin' ? 'System Admin' : u.role==='officer' ? 'Department officer' : 'Student';
+  const roleLabel = u.role==='admin' ? 'System Admin' : u.role==='officer' ? 'Department officer' : u.role==='ssg' ? 'SSG officer' : 'Student';
   return `
   <div class="page-head"><h1>My Profile</h1><p>${roleLabel} account details.</p></div>
   <div class="card" style="max-width:440px; margin-bottom:24px;">
@@ -739,6 +914,10 @@ function renderProfile(){
       <div class="field"><label>Department</label><input value="${u.department}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
       <div class="field"><label>Section</label><input value="${u.section || 'Not set'}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
       <div class="hint" style="margin-top:-8px; margin-bottom:14px;">Department/section reassignment is handled by the system admin, under Manage Officers.</div>
+    ` : ''}
+    ${u.role==='ssg' ? `
+      <div class="field"><label>Username</label><input value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
+      <div class="hint" style="margin-top:-8px; margin-bottom:14px;">SSG accounts can take attendance across every department and section — no department/section assignment applies.</div>
     ` : ''}
     ${u.role==='admin' ? `
       <div class="field"><label>Username</label><input value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
@@ -813,7 +992,7 @@ function renderAdminOverview(){
   const totalAtt = DB.attendance.length;
   const totalComplete = DB.attendance.filter(a=>a.timeIn && a.timeOut).length;
   const totalEvents = DB.events.length;
-  const officerCount = Object.values(DB.users).filter(u=>u.role==='officer').length;
+  const officerCount = Object.values(DB.users).filter(u=>u.role==='officer' || u.role==='ssg').length;
   const byEvent = {};
   DB.attendance.forEach(a=>{
     if(!byEvent[a.eventName]) byEvent[a.eventName] = {timedIn:0, complete:0};
@@ -946,14 +1125,23 @@ function renderAdminStudents(){
 function renderAdminOfficers(){
   const d = state.newOfficerDraft;
   const editing = state.editingOfficerUsername;
-  const officers = Object.values(DB.users).filter(u=>u.role==='officer');
+  const type = d.type || 'department';
+  const officers = Object.values(DB.users).filter(u=>u.role==='officer' || u.role==='ssg');
   return `
-  <div class="page-head"><h1>Manage Officers</h1><p>One account per section desk.</p></div>
+  <div class="page-head"><h1>Manage Officers</h1><p>Department officers cover one section each; SSG officers cover every department and section.</p></div>
   <div class="card" style="max-width:480px; margin-bottom:24px;">
     ${editing ? `<div class="pill gold" style="margin-bottom:14px;">Editing ${editing}</div>` : ''}
-    <div class="field"><label>Officer name</label><input id="of-name" value="${d.name}" placeholder="Maria Santos"></div>
-    <div class="field"><label>Username</label><input id="of-user" value="${d.username}" placeholder="cs-officer" ${editing?'disabled style="background:var(--bg); color:var(--ink-soft);"':''}></div>
+    <div class="field">
+      <label>Officer type</label>
+      <div class="auth-tabs" style="margin-bottom:0;">
+        <div class="auth-tab officer-type-tab ${type==='department'?'active':''}" data-type="department" style="${editing?'pointer-events:none; opacity:0.6;':''}">Department Officer</div>
+        <div class="auth-tab officer-type-tab ${type==='ssg'?'active':''}" data-type="ssg" style="${editing?'pointer-events:none; opacity:0.6;':''}">SSG Officer</div>
+      </div>
+    </div>
+    <div class="field" style="margin-top:16px;"><label>Officer name</label><input id="of-name" value="${d.name}" placeholder="Maria Santos"></div>
+    <div class="field"><label>Username</label><input id="of-user" value="${d.username}" placeholder="${type==='ssg'?'ssg-officer1':'cs-officer'}" ${editing?'disabled style="background:var(--bg); color:var(--ink-soft);"':''}></div>
     ${pwField('of-pw', 'Password', editing ? 'Leave blank to keep current password' : 'Set a password')}
+    ${type==='department' ? `
     <div class="field">
       <label>Department</label>
       <select id="of-dept">${DB.departments.map(dep=>`<option ${d.department===dep?'selected':''}>${dep}</option>`).join('')}</select>
@@ -962,6 +1150,7 @@ function renderAdminOfficers(){
       <label>Section</label>
       <select id="of-section">${sectionOptions(d.department || DB.departments[0], d.section)}</select>
     </div>
+    ` : `<p class="hint" style="margin-top:-6px;">SSG officers aren't tied to a department or section — their QR works for any student, anywhere.</p>`}
     ${state.err ? `<div class="err">${state.err}</div>` : ''}
     <button class="btn-primary" style="width:100%;" id="create-officer-btn">${editing ? 'Save changes' : 'Create officer account'}</button>
     ${editing ? `<button class="btn-ghost" style="width:100%; margin-top:8px;" id="cancel-edit-officer-btn">Cancel</button>` : ''}
@@ -969,8 +1158,8 @@ function renderAdminOfficers(){
   <div class="section-title">All officers</div>
   <div class="card" style="padding:0;">
     <table>
-      <tr><th>Name</th><th>Username</th><th>Department</th><th>Section</th><th></th></tr>
-      ${officers.map(o=>`<tr><td>${o.name}</td><td class="mono">${o.username}</td><td><span class="badge-dept">${o.department}</span></td><td>${o.section || '<span class="pill gold">not set</span>'}</td><td><button class="btn-ghost" data-edit-officer="${o.username}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-del-officer="${o.username}">Remove</button></td></tr>`).join('') || `<tr><td colspan="5" class="empty">No officer accounts yet.</td></tr>`}
+      <tr><th>Name</th><th>Username</th><th>Type</th><th>Department</th><th>Section</th><th></th></tr>
+      ${officers.map(o=>`<tr><td>${o.name}</td><td class="mono">${o.username}</td><td>${o.role==='ssg'?'<span class="pill gold">SSG</span>':'<span class="pill green">Department</span>'}</td><td>${o.role==='ssg'?'—':`<span class="badge-dept">${o.department}</span>`}</td><td>${o.role==='ssg'?'—':(o.section || '<span class="pill gold">not set</span>')}</td><td><button class="btn-ghost" data-edit-officer="${o.username}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-del-officer="${o.username}">Remove</button></td></tr>`).join('') || `<tr><td colspan="6" class="empty">No officer accounts yet.</td></tr>`}
     </table>
   </div>`;
 }
@@ -1047,29 +1236,42 @@ function attachAdminHandlers(){
     const secSel = document.getElementById('of-section');
     if(secSel) secSel.innerHTML = sectionOptions(ofDept.value, null);
   };
+  document.querySelectorAll('.officer-type-tab').forEach(el=>{
+    el.onclick = ()=>{
+      if(state.editingOfficerUsername) return; // type can't change mid-edit
+      state.newOfficerDraft.type = el.dataset.type;
+      state.err='';
+      render();
+    };
+  });
   const createOf = document.getElementById('create-officer-btn');
   if(createOf) createOf.onclick = async ()=>{
     const name = document.getElementById('of-name').value.trim();
     const username = document.getElementById('of-user').value.trim();
     const pw = document.getElementById('of-pw').value;
-    const department = document.getElementById('of-dept').value;
-    const section = document.getElementById('of-section').value;
     const editing = state.editingOfficerUsername;
-    if(!name || !username || !section || (!editing && !pw)){ state.err='Fill in every field — if Section only shows "No sections yet," add one under Sections first.'; render(); return; }
+    const type = state.newOfficerDraft.type || 'department';
+    const isDept = editing ? DB.users[editing] && DB.users[editing].role==='officer' : type==='department';
+    const department = isDept ? document.getElementById('of-dept').value : null;
+    const section = isDept ? document.getElementById('of-section').value : null;
+    if(!name || !username || (isDept && !section) || (!editing && !pw)){ state.err='Fill in every field — if Section only shows "No sections yet," add one under Sections first.'; render(); return; }
     if(editing){
       const existing = DB.users[editing];
       if(!existing){ state.err='This officer no longer exists.'; state.editingOfficerUsername=null; render(); return; }
       existing.name = name;
-      existing.department = department;
-      existing.section = section;
+      if(existing.role==='officer'){ existing.department = department; existing.section = section; }
       if(pw) existing.passwordHash = hashPw(pw);
       DB.users[editing] = existing;
     } else {
       if(DB.users[username]){ state.err='That username is taken.'; render(); return; }
-      DB.users[username] = {id:username, role:'officer', name, username, department, section, passwordHash:hashPw(pw)};
+      if(isDept){
+        DB.users[username] = {id:username, role:'officer', name, username, department, section, passwordHash:hashPw(pw)};
+      } else {
+        DB.users[username] = {id:username, role:'ssg', name, username, passwordHash:hashPw(pw)};
+      }
     }
     await saveKey('users', DB.users);
-    state.newOfficerDraft = {name:'', username:'', password:'', department:DB.departments[0], section:''};
+    state.newOfficerDraft = {name:'', username:'', password:'', department:DB.departments[0], section:'', type:'department'};
     state.editingOfficerUsername = null;
     state.err='';
     render();
@@ -1079,7 +1281,7 @@ function attachAdminHandlers(){
       const o = DB.users[el.dataset.editOfficer];
       if(!o) return;
       state.editingOfficerUsername = o.username;
-      state.newOfficerDraft = {name:o.name, username:o.username, password:'', department:o.department, section:o.section || ''};
+      state.newOfficerDraft = {name:o.name, username:o.username, password:'', department:o.department || DB.departments[0], section:o.section || '', type: o.role==='ssg' ? 'ssg' : 'department'};
       state.err='';
       render();
     };
@@ -1087,7 +1289,7 @@ function attachAdminHandlers(){
   const cancelEdit = document.getElementById('cancel-edit-officer-btn');
   if(cancelEdit) cancelEdit.onclick = ()=>{
     state.editingOfficerUsername = null;
-    state.newOfficerDraft = {name:'', username:'', password:'', department:DB.departments[0], section:''};
+    state.newOfficerDraft = {name:'', username:'', password:'', department:DB.departments[0], section:'', type:'department'};
     state.err='';
     render();
   };
