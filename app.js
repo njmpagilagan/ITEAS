@@ -59,6 +59,11 @@ function uid(prefix){ return prefix+'_'+Math.random().toString(36).slice(2,9); }
 function fmtDate(ts){ return new Date(ts).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
 function normSection(s){ return (s||'').trim().toLowerCase(); }
 function eventSessionType(ev){ return (ev && ev.sessionType) || 'full'; }
+function scopeLabel(scope){ return scope==='ssg' ? 'SSG' : scope==='department' ? 'Department' : 'Section'; }
+function scopePill(scope){
+  const cls = scope==='ssg' ? 'gold' : scope==='department' ? 'green' : 'gold';
+  return `<span class="pill ${cls}">${scopeLabel(scope)}</span>`;
+}
 function attendanceStatusPill(record, ev){
   const st = eventSessionType(ev);
   if(st==='am'){
@@ -102,6 +107,7 @@ let state = {
   checkinStep:'scan',      // scan | done
   lastPhase:'in',
   lastSession:'am',
+  lastScope:'section',
   cameraOpen:false,
   officerActiveEventId:null,
   officerToken:null,
@@ -390,11 +396,12 @@ function renderCheckin(){
   // done
   const isIn = state.lastPhase === 'in';
   const sessLabel = (state.lastSession || 'am').toUpperCase();
+  const scopeLabel = state.lastScope==='ssg' ? 'SSG' : state.lastScope==='department' ? 'Department' : 'Section';
   return `
   <div class="stamp-wrap">
     <div class="stamp">${sessLabel} ${isIn ? 'TIME IN' : 'TIME OUT'}<br>${new Date().toLocaleDateString()}</div>
     <h2 style="margin-top:24px;">${isIn ? `You're timed in for ${sessLabel}` : `You're timed out for ${sessLabel}`}</h2>
-    <p style="color:var(--ink-soft); text-align:center; max-width:340px;">${isIn ? 'Come back and scan again before you leave to complete this session.' : 'This session is now complete. If there\'s another session today, scan again when it starts.'}</p>
+    <p style="color:var(--ink-soft); text-align:center; max-width:340px;">Recorded via the <strong>${scopeLabel}</strong> desk. ${isIn ? 'Come back and scan again before you leave to complete this session.' : 'This session is now complete. If there\'s another session today, scan again when it starts.'}</p>
     <button class="btn-ghost" id="checkin-again-btn" style="margin-top:14px;">Back to check-in</button>
   </div>`;
 }
@@ -402,13 +409,13 @@ function renderHistory(){
   const mine = DB.attendance.filter(a=>a.studentId===state.currentUser.id).sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0));
   if(mine.length===0) return `<div class="page-head"><h1>My Attendance</h1></div><div class="empty">No check-ins yet — scan a QR code at an event to get started.</div>`;
   return `
-  <div class="page-head"><h1>My Attendance</h1><p>${mine.length} event${mine.length>1?'s':''} recorded this year.</p></div>
+  <div class="page-head"><h1>My Attendance</h1><p>${mine.length} record${mine.length>1?'s':''} recorded this year — one row per desk you've checked in with (section, department, or SSG).</p></div>
   <div class="card" style="padding:0;">
     <table>
-      <tr><th>Event</th><th>Department</th><th>AM in</th><th>AM out</th><th>PM in</th><th>PM out</th><th>Status</th></tr>
+      <tr><th>Event</th><th>Via</th><th>Department</th><th>AM in</th><th>AM out</th><th>PM in</th><th>PM out</th><th>Status</th></tr>
       ${mine.map(a=>{
         const ev = DB.events.find(e=>e.id===a.eventId);
-        return `<tr><td>${a.eventName}</td><td><span class="badge-dept">${a.department}</span></td><td>${a.amTimeIn?fmtDate(a.amTimeIn):'—'}</td><td>${a.amTimeOut?fmtDate(a.amTimeOut):'—'}</td><td>${a.pmTimeIn?fmtDate(a.pmTimeIn):'—'}</td><td>${a.pmTimeOut?fmtDate(a.pmTimeOut):'—'}</td><td>${attendanceStatusPill(a, ev)}</td></tr>`;
+        return `<tr><td>${a.eventName}</td><td>${scopePill(a.scope)}</td><td><span class="badge-dept">${a.department}</span></td><td>${a.amTimeIn?fmtDate(a.amTimeIn):'—'}</td><td>${a.amTimeOut?fmtDate(a.amTimeOut):'—'}</td><td>${a.pmTimeIn?fmtDate(a.pmTimeIn):'—'}</td><td>${a.pmTimeOut?fmtDate(a.pmTimeOut):'—'}</td><td>${attendanceStatusPill(a, ev)}</td></tr>`;
       }).join('')}
     </table>
   </div>`;
@@ -486,19 +493,22 @@ async function tryUseToken(rawCode){
   if(!ev){ fail('This event no longer exists.'); return; }
   // pull the latest attendance log too, so duplicate/order checks reflect other devices
   DB.attendance = await fetchKey('attendance', DB.attendance);
-  let record = DB.attendance.find(a=>a.eventId===ev.id && a.studentId===u.id);
+  // one independent record per (event, student, scope) — a Section, Department, and SSG
+  // check-in for the same event/student are tracked separately, not merged into one record
+  let record = DB.attendance.find(a=>a.eventId===ev.id && a.studentId===u.id && a.scope===tok.scope);
   const session = tok.session === 'pm' ? 'pm' : 'am';
   const sessLabel = session.toUpperCase();
+  const scopeLabel = tok.scope==='ssg' ? 'SSG' : tok.scope==='department' ? 'Department' : 'Section';
   const inField = session + 'TimeIn', outField = session + 'TimeOut';
   if(tok.phase==='out'){
-    if(!record || !record[inField]){ fail(`You need to time in for ${sessLabel} first before you can time out.`); return; }
-    if(record[outField]){ fail(`You already timed out for ${sessLabel} on this event.`); return; }
+    if(!record || !record[inField]){ fail(`You need to time in for ${sessLabel} (${scopeLabel}) first before you can time out.`); return; }
+    if(record[outField]){ fail(`You already timed out for ${sessLabel} (${scopeLabel}) on this event.`); return; }
     record[outField] = Date.now();
     record.tokenUsed = code;
   } else {
-    if(record && record[inField]){ fail(`You already timed in for ${sessLabel} on this event.`); return; }
+    if(record && record[inField]){ fail(`You already timed in for ${sessLabel} (${scopeLabel}) on this event.`); return; }
     if(!record){
-      record = {id: uid('att'), eventId:ev.id, eventName:ev.name, department:u.department, studentId:u.id, studentName:u.name, section:u.section, amTimeIn:null, amTimeOut:null, pmTimeIn:null, pmTimeOut:null, tokenUsed:null};
+      record = {id: uid('att'), eventId:ev.id, eventName:ev.name, department:u.department, studentId:u.id, studentName:u.name, section:u.section, scope:tok.scope, amTimeIn:null, amTimeOut:null, pmTimeIn:null, pmTimeOut:null, tokenUsed:null};
       DB.attendance.push(record);
     }
     record[inField] = Date.now();
@@ -508,6 +518,7 @@ async function tryUseToken(rawCode){
   state.checkinStep = 'done';
   state.lastPhase = tok.phase;
   state.lastSession = session;
+  state.lastScope = tok.scope;
   state.err = '';
   stopCamera();
   state.cameraOpen = false;
@@ -680,10 +691,11 @@ function renderOfficerAttendees(myEvents){
   const activeId = state.officerActiveEventId || (myEvents[0] && myEvents[0].id);
   const ev = myEvents.find(e=>e.id===activeId);
   const mySection = state.currentUser.section;
-  const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id && a.department===state.currentUser.department && (!mySection || normSection(a.section)===normSection(mySection))).sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0)) : [];
+  const myScope = mySection ? 'section' : 'department';
+  const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id && a.scope===myScope && a.department===state.currentUser.department && (!mySection || normSection(a.section)===normSection(mySection))).sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0)) : [];
   const complete = rows.filter(r=>(r.amTimeIn&&r.amTimeOut)||(r.pmTimeIn&&r.pmTimeOut)).length;
   return `
-  <div class="page-head"><h1>Attendees</h1><p>Live list for ${mySection ? "your section's desk" : "your whole department's desk"}.</p></div>
+  <div class="page-head"><h1>Attendees</h1><p>Live list for ${mySection ? "your section's desk" : "your whole department's desk"} — only check-ins made through your own QR, not other desks.</p></div>
   ${myEvents.length===0 ? `<div class="empty">No events yet.</div>` : `
   <div class="card" style="max-width:300px; margin-bottom:18px;">
     <div class="field" style="margin-bottom:0;">
@@ -699,7 +711,7 @@ function renderOfficerAttendees(myEvents){
   </div>
   <div style="margin-bottom:18px;">
     <button class="btn-danger" id="reset-event-attendance-btn" ${rows.length===0?'disabled':''}>Reset attendance for this event (${rows.length})</button>
-    <p class="hint" style="margin-top:8px;">Clears all check-ins for ${mySection ? 'your section' : 'your entire department'} on this event — students will need to scan in again from scratch.</p>
+    <p class="hint" style="margin-top:8px;">Clears check-ins made through ${mySection ? 'your section' : 'your department'}'s desk only — records from other desks for the same event are untouched. Students will need to scan in again from scratch.</p>
   </div>
   <div class="card" style="padding:0;">
     <table id="officer-att-table">
@@ -776,10 +788,10 @@ function renderSsgGenerate(allEvents){
 function renderSsgAttendees(allEvents){
   const activeId = state.officerActiveEventId || (allEvents[0] && allEvents[0].id);
   const ev = allEvents.find(e=>e.id===activeId);
-  const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id).sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0)) : [];
+  const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id && a.scope==='ssg').sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0)) : [];
   const complete = rows.filter(r=>(r.amTimeIn&&r.amTimeOut)||(r.pmTimeIn&&r.pmTimeOut)).length;
   return `
-  <div class="page-head"><h1>Attendees</h1><p>Live list across every department and section for this event.</p></div>
+  <div class="page-head"><h1>Attendees</h1><p>Live list across every department and section for this event — only check-ins made through the SSG desk, not individual department/section desks.</p></div>
   ${allEvents.length===0 ? `<div class="empty">No events yet.</div>` : `
   <div class="card" style="max-width:300px; margin-bottom:18px;">
     <div class="field" style="margin-bottom:0;">
@@ -795,7 +807,7 @@ function renderSsgAttendees(allEvents){
   </div>
   <div style="margin-bottom:18px;">
     <button class="btn-danger" id="reset-event-attendance-btn" ${rows.length===0?'disabled':''}>Reset attendance for this event (${rows.length})</button>
-    <p class="hint" style="margin-top:8px;">Clears all check-ins across every department for this event — students will need to scan in again from scratch.</p>
+    <p class="hint" style="margin-top:8px;">Clears SSG check-ins across every department for this event — section and department desk records are untouched. Students will need to scan in again from scratch.</p>
   </div>
   <div class="card" style="padding:0;">
     <table id="officer-att-table">
@@ -875,10 +887,10 @@ function attachSsgHandlers(){
     const eventId = eventSelect ? eventSelect.value : state.officerActiveEventId;
     if(!eventId) return;
     DB.attendance = await fetchKey('attendance', DB.attendance);
-    const toRemove = DB.attendance.filter(a => a.eventId===eventId);
+    const toRemove = DB.attendance.filter(a => a.eventId===eventId && a.scope==='ssg');
     if(toRemove.length===0){ render(); return; }
-    if(!confirm(`Reset attendance for this event? This permanently removes ${toRemove.length} record${toRemove.length===1?'':'s'} across every department — students will need to scan in again from scratch.`)) return;
-    DB.attendance = DB.attendance.filter(a => a.eventId!==eventId);
+    if(!confirm(`Reset attendance for this event? This permanently removes ${toRemove.length} SSG record${toRemove.length===1?'':'s'} across every department — section and department desk records for the same event are untouched. Students will need to scan in again from scratch.`)) return;
+    DB.attendance = DB.attendance.filter(a => !(a.eventId===eventId && a.scope==='ssg'));
     await saveKey('attendance', DB.attendance);
     render();
   };
@@ -957,11 +969,13 @@ function attachOfficerHandlers(){
     if(!eventId) return;
     const dept = state.currentUser.department;
     const section = state.currentUser.section;
+    const myScope = section ? 'section' : 'department';
+    const matches = a => a.eventId===eventId && a.scope===myScope && a.department===dept && (!section || normSection(a.section)===normSection(section));
     DB.attendance = await fetchKey('attendance', DB.attendance);
-    const toRemove = DB.attendance.filter(a => a.eventId===eventId && a.department===dept && normSection(a.section)===normSection(section));
+    const toRemove = DB.attendance.filter(matches);
     if(toRemove.length===0){ render(); return; }
-    if(!confirm(`Reset attendance for this event? This permanently removes ${toRemove.length} record${toRemove.length===1?'':'s'} for your section — students will need to scan in again from scratch.`)) return;
-    DB.attendance = DB.attendance.filter(a => !(a.eventId===eventId && a.department===dept && normSection(a.section)===normSection(section)));
+    if(!confirm(`Reset attendance for this event? This permanently removes ${toRemove.length} record${toRemove.length===1?'':'s'} made through ${section ? 'your section' : 'your department'}'s desk — records from other desks are untouched. Students will need to scan in again from scratch.`)) return;
+    DB.attendance = DB.attendance.filter(a => !matches(a));
     await saveKey('attendance', DB.attendance);
     render();
   };
@@ -1260,13 +1274,16 @@ function renderAdminOfficers(){
 function renderAdminRecords(){
   const events = ['all', ...DB.events.map(e=>e.name)];
   const depts = ['all', ...DB.departments];
+  const scopes = ['all', 'section', 'department', 'ssg'];
+  const scopeFilter = state.adminFilterScope || 'all';
   let rows = DB.attendance.slice().sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0));
   if(state.adminFilterEvent!=='all') rows = rows.filter(r=>r.eventName===state.adminFilterEvent);
   if(state.adminFilterDept!=='all') rows = rows.filter(r=>r.department===state.adminFilterDept);
+  if(scopeFilter!=='all') rows = rows.filter(r=>r.scope===scopeFilter);
   const canBulkReset = state.adminFilterEvent !== 'all';
   return `
-  <div class="page-head"><h1>All Records</h1><p>Full attendance log across every event and department.</p></div>
-  <div class="row" style="margin-bottom:18px; max-width:520px;">
+  <div class="page-head"><h1>All Records</h1><p>Full attendance log across every event, department, and desk (section, department, or SSG).</p></div>
+  <div class="row" style="margin-bottom:18px; max-width:700px;">
     <div class="field" style="margin-bottom:0; flex:1;">
       <label>Event</label>
       <select id="filter-event">${events.map(e=>`<option ${state.adminFilterEvent===e?'selected':''}>${e}</option>`).join('')}</select>
@@ -1275,22 +1292,26 @@ function renderAdminRecords(){
       <label>Department</label>
       <select id="filter-dept">${depts.map(dp=>`<option ${state.adminFilterDept===dp?'selected':''}>${dp}</option>`).join('')}</select>
     </div>
+    <div class="field" style="margin-bottom:0; flex:1;">
+      <label>Via</label>
+      <select id="filter-scope">${scopes.map(s=>`<option value="${s}" ${scopeFilter===s?'selected':''}>${s==='all'?'all':scopeLabel(s)}</option>`).join('')}</select>
+    </div>
   </div>
   <div style="margin-bottom:18px;">
     ${canBulkReset ? `
       <button class="btn-danger" id="bulk-reset-records-btn" ${rows.length===0?'disabled':''}>Reset all ${rows.length} record${rows.length===1?'':'s'} shown below</button>
-      <p class="hint" style="margin-top:8px;">Clears attendance for <strong>${state.adminFilterEvent}</strong>${state.adminFilterDept!=='all'?` in ${state.adminFilterDept}`:' across every department'} — students will need to scan in again from scratch.</p>
+      <p class="hint" style="margin-top:8px;">Clears attendance for <strong>${state.adminFilterEvent}</strong>${state.adminFilterDept!=='all'?` in ${state.adminFilterDept}`:' across every department'}${scopeFilter!=='all'?` (${scopeLabel(scopeFilter)} desk only)`:''} — students will need to scan in again from scratch.</p>
     ` : `
       <p class="hint">Select a specific event above to reset all of its attendance at once.</p>
     `}
   </div>
   <div class="card" style="padding:0;">
     <table>
-      <tr><th>Student</th><th>Event</th><th>Department</th><th>AM in</th><th>AM out</th><th>PM in</th><th>PM out</th><th>Status</th><th></th></tr>
+      <tr><th>Student</th><th>Event</th><th>Via</th><th>Department</th><th>AM in</th><th>AM out</th><th>PM in</th><th>PM out</th><th>Status</th><th></th></tr>
       ${rows.map(r=>{
         const ev = DB.events.find(e=>e.id===r.eventId);
-        return `<tr><td>${r.studentName} <span style="color:var(--ink-soft);">(${r.studentId})</span></td><td>${r.eventName}</td><td><span class="badge-dept">${r.department}</span></td><td>${r.amTimeIn?fmtDate(r.amTimeIn):'—'}</td><td>${r.amTimeOut?fmtDate(r.amTimeOut):'—'}</td><td>${r.pmTimeIn?fmtDate(r.pmTimeIn):'—'}</td><td>${r.pmTimeOut?fmtDate(r.pmTimeOut):'—'}</td><td>${attendanceStatusPill(r, ev)}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`;
-      }).join('') || `<tr><td colspan="9" class="empty">No records match this filter.</td></tr>`}
+        return `<tr><td>${r.studentName} <span style="color:var(--ink-soft);">(${r.studentId})</span></td><td>${r.eventName}</td><td>${scopePill(r.scope)}</td><td><span class="badge-dept">${r.department}</span></td><td>${r.amTimeIn?fmtDate(r.amTimeIn):'—'}</td><td>${r.amTimeOut?fmtDate(r.amTimeOut):'—'}</td><td>${r.pmTimeIn?fmtDate(r.pmTimeIn):'—'}</td><td>${r.pmTimeOut?fmtDate(r.pmTimeOut):'—'}</td><td>${attendanceStatusPill(r, ev)}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`;
+      }).join('') || `<tr><td colspan="10" class="empty">No records match this filter.</td></tr>`}
     </table>
   </div>`;
 }
