@@ -119,10 +119,12 @@ let state = {
   newOfficerDraft:{name:'', username:'', password:'', department:DEFAULT_DEPTS[0], section:'', type:'section'},
   adminFilterEvent:'all',
   adminFilterDept:'all',
+  adminFilterScope:'all',
   profileMsg:'',
   editingOfficerUsername:null,
   editingStudentId:null,
   studentSearch:'',
+  studentDeptFilter:'all',
   lastResetPassword:null
 };
 
@@ -1169,7 +1171,9 @@ function renderAdminDepartments(){
   }).join('')}`;
 }
 function renderAdminStudents(){
-  const students = Object.values(DB.users).filter(u=>u.role==='student').sort((a,b)=>a.name.localeCompare(b.name));
+  const allStudents = Object.values(DB.users).filter(u=>u.role==='student').sort((a,b)=>a.name.localeCompare(b.name));
+  const deptFilter = state.studentDeptFilter || 'all';
+  const students = deptFilter==='all' ? allStudents : allStudents.filter(s=>s.department===deptFilter);
   const editing = state.editingStudentId;
   const editingUser = editing ? DB.users[editing] : null;
   const reset = state.lastResetPassword;
@@ -1198,8 +1202,18 @@ function renderAdminStudents(){
     <button class="btn-ghost" style="width:100%; margin-top:8px;" id="cancel-student-edit-btn">Cancel</button>
   </div>
   ` : ''}
+  <div class="card" style="margin-bottom:18px;">
+    <label style="display:block; margin-bottom:10px;">Department</label>
+    <div style="display:flex; flex-wrap:wrap; gap:8px;">
+      <button class="dept-tab-btn ${deptFilter==='all'?'btn-primary':'btn-ghost'}" data-dept="all">All (${allStudents.length})</button>
+      ${DB.departments.map(dep=>{
+        const count = allStudents.filter(s=>s.department===dep).length;
+        return `<button class="dept-tab-btn ${deptFilter===dep?'btn-primary':'btn-ghost'}" data-dept="${dep}">${dep} (${count})</button>`;
+      }).join('')}
+    </div>
+  </div>
   <div class="card" style="max-width:320px; margin-bottom:18px;">
-    <div class="field" style="margin-bottom:0;"><label>Search</label><input id="student-search" placeholder="Name or student ID"></div>
+    <div class="field" style="margin-bottom:0;"><label>Search ${deptFilter==='all'?'all departments':'in ' + deptFilter}</label><input id="student-search" placeholder="Name or student ID"></div>
   </div>
   <div class="card" style="padding:0;">
     <table id="student-table">
@@ -1420,6 +1434,8 @@ function attachAdminHandlers(){
   if(fe) fe.onchange = ()=>{ state.adminFilterEvent = fe.value; render(); };
   const fd = document.getElementById('filter-dept');
   if(fd) fd.onchange = ()=>{ state.adminFilterDept = fd.value; render(); };
+  const fs = document.getElementById('filter-scope');
+  if(fs) fs.onchange = ()=>{ state.adminFilterScope = fs.value; render(); };
   const addDept = document.getElementById('add-dept-btn');
   if(addDept) addDept.onclick = async ()=>{
     const nameEl = document.getElementById('new-dept-name');
@@ -1478,6 +1494,12 @@ function attachAdminHandlers(){
       tr.style.display = tr.dataset.studentSearch.includes(q) ? '' : 'none';
     });
   };
+  document.querySelectorAll('.dept-tab-btn').forEach(el=>{
+    el.onclick = ()=>{
+      state.studentDeptFilter = el.dataset.dept;
+      render();
+    };
+  });
   document.querySelectorAll('[data-edit-student]').forEach(el=>{
     el.onclick = ()=>{
       state.editingStudentId = el.dataset.editStudent;
