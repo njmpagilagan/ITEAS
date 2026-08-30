@@ -343,6 +343,13 @@ function attachShellHandlers(){
       }
       if(role==='admin'){ state.adminSubRoute = sub; }
       state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null;
+      // an account's own department/section may have been changed by admin since login —
+      // always refresh it so a stale, already-logged-in session doesn't keep enforcing old rules
+      if(role==='officer' || role==='ssg' || role==='student'){
+        DB.users = await fetchKey('users', DB.users);
+        const fresh = DB.users[state.currentUser.id];
+        if(fresh) state.currentUser = fresh;
+      }
       // views that show shared records should always reflect what's actually in the database right now,
       // not just whatever happened to be loaded when this tab was first opened
       if((role==='student' && sub==='history') || ((role==='officer'||role==='ssg') && sub==='attendees') || (role==='admin' && (sub==='overview' || sub==='records'))){
