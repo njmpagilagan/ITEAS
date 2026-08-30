@@ -119,7 +119,6 @@ let state = {
   newOfficerDraft:{name:'', username:'', password:'', department:DEFAULT_DEPTS[0], section:'', type:'section'},
   adminFilterEvent:'all',
   adminFilterDept:'all',
-  sectionsFilterDept:'',
   profileMsg:'',
   editingOfficerUsername:null,
   editingStudentId:null,
@@ -143,7 +142,6 @@ async function seedIfEmpty(){
   if(deptsChanged){ await saveKey('departments', DB.departments); }
   state.newEventDraft.departments = [...DB.departments];
   state.newOfficerDraft.department = DB.departments[0];
-  state.sectionsFilterDept = DB.departments[0] || '';
 }
 function sectionsFor(dept){ return DB.sections[dept] || []; }
 function sectionOptions(dept, selected){
@@ -312,7 +310,7 @@ function renderShell(innerHtml){
   const items = role==='student' ? [['checkin','Check In'],['history','My Attendance'],['profile','My Profile']]
               : role==='officer' ? [['generate','Generate QR'],['attendees','Attendees'],['profile','My Profile']]
               : role==='ssg' ? [['generate','Generate QR'],['attendees','Attendees'],['profile','My Profile']]
-              : [['overview','Overview'],['events','Manage Events'],['departments','Departments'],['sections','Sections'],['students','Manage Students'],['officers','Manage Officers'],['records','All Records'],['profile','My Profile']];
+              : [['overview','Overview'],['events','Manage Events'],['departments','Departments'],['students','Manage Students'],['officers','Manage Officers'],['records','All Records'],['profile','My Profile']];
   const sub = role==='student' ? state.studentSubRoute : role==='officer' ? state.officerSubRoute : role==='ssg' ? state.ssgSubRoute : state.adminSubRoute;
   const roleLabel = role==='admin'?'System Admin':role==='officer'?(u.section?'Section Officer':'Department Officer'):role==='ssg'?'SSG Officer':'Student';
   return `
@@ -1069,7 +1067,6 @@ function renderAdmin(){
   if(state.adminSubRoute==='overview') return renderAdminOverview();
   if(state.adminSubRoute==='events') return renderAdminEvents();
   if(state.adminSubRoute==='departments') return renderAdminDepartments();
-  if(state.adminSubRoute==='sections') return renderAdminSections();
   if(state.adminSubRoute==='students') return renderAdminStudents();
   if(state.adminSubRoute==='officers') return renderAdminOfficers();
   if(state.adminSubRoute==='records') return renderAdminRecords();
@@ -1139,45 +1136,37 @@ function renderAdminEvents(){
 }
 function renderAdminDepartments(){
   const deps = DB.departments;
-  const inUse = new Set();
-  DB.events.forEach(e=>e.departments.forEach(dp=>inUse.add(dp)));
+  const deptInUse = new Set();
+  DB.events.forEach(e=>e.departments.forEach(dp=>deptInUse.add(dp)));
+  const sectionInUse = new Set(Object.values(DB.users).filter(u=>u.role==='student' || u.role==='officer').map(u=>normSection(u.section)));
   return `
-  <div class="page-head"><h1>Departments</h1><p>This list feeds the department options when creating events and officer accounts.</p></div>
+  <div class="page-head"><h1>Departments</h1><p>Manage departments and the sections within each one — everything students and officers pick from.</p></div>
   <div class="card" style="max-width:440px; margin-bottom:24px;">
     <div class="field"><label>Add a department</label><input id="new-dept-name" placeholder="e.g. Maritime Department"></div>
     ${state.err ? `<div class="err">${state.err}</div>` : ''}
     <button class="btn-primary" style="width:100%;" id="add-dept-btn">Add department</button>
   </div>
-  <div class="section-title">Current departments</div>
-  <div class="card" style="padding:0; max-width:440px;">
-    <table>
-      <tr><th>Department</th><th></th></tr>
-      ${deps.map(dp=>`<tr><td>${dp} ${inUse.has(dp)?'<span class="pill gold" style="margin-left:6px;">in use</span>':''}</td><td><button class="btn-danger" data-del-dept="${dp}">Remove</button></td></tr>`).join('') || `<tr><td colspan="2" class="empty">No departments yet.</td></tr>`}
-    </table>
-  </div>`;
-}
-function renderAdminSections(){
-  const dept = state.sectionsFilterDept || DB.departments[0] || '';
-  const list = sectionsFor(dept);
-  const inUse = new Set(Object.values(DB.users).filter(u=>u.role==='student' || u.role==='officer').map(u=>normSection(u.section)));
-  return `
-  <div class="page-head"><h1>Sections</h1><p>Manage the sections students and officers can select, grouped by department.</p></div>
-  <div class="card" style="max-width:440px; margin-bottom:24px;">
-    <div class="field">
-      <label>Department</label>
-      <select id="sections-dept-select">${DB.departments.map(dp=>`<option ${dp===dept?'selected':''}>${dp}</option>`).join('')}</select>
-    </div>
-    <div class="field"><label>Add a section</label><input id="new-section-name" placeholder="e.g. BSCS 3-A"></div>
-    ${state.err ? `<div class="err">${state.err}</div>` : ''}
-    <button class="btn-primary" style="width:100%;" id="add-section-btn">Add section</button>
-  </div>
-  <div class="section-title">Sections in ${dept || '—'}</div>
-  <div class="card" style="padding:0; max-width:440px;">
-    <table>
-      <tr><th>Section</th><th></th></tr>
-      ${list.map(s=>`<tr><td>${s} ${inUse.has(normSection(s))?'<span class="pill gold" style="margin-left:6px;">in use</span>':''}</td><td><button class="btn-danger" data-del-section="${s}">Remove</button></td></tr>`).join('') || `<tr><td colspan="2" class="empty">No sections yet for this department.</td></tr>`}
-    </table>
-  </div>`;
+  <div class="section-title">All departments</div>
+  ${deps.length===0 ? `<div class="empty">No departments yet.</div>` : deps.map(dept=>{
+    const sections = sectionsFor(dept);
+    return `
+    <div class="card" style="max-width:560px; margin-bottom:14px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <div style="font-weight:700; font-size:15px;">${dept} ${deptInUse.has(dept)?'<span class="pill gold" style="margin-left:6px;">in use</span>':''}</div>
+        <button class="btn-danger" data-del-dept="${dept}">Remove department</button>
+      </div>
+      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
+        ${sections.length ? sections.map(s=>`
+          <span class="section-chip">${s} ${sectionInUse.has(normSection(s))?'<span class="pill gold" style="margin-left:4px;">in use</span>':''}
+            <button class="chip-x" data-del-section-dept="${dept}" data-del-section-name="${s}" aria-label="Remove section">&times;</button>
+          </span>`).join('') : `<span class="hint" style="margin:0;">No sections yet for this department.</span>`}
+      </div>
+      <div class="row" style="gap:8px; margin-bottom:0;">
+        <input class="add-section-input" data-dept="${dept}" placeholder="Add a section, e.g. BSCS 3-A" style="flex:1;">
+        <button class="btn-ghost add-section-btn" data-dept="${dept}" style="flex-shrink:0;">Add section</button>
+      </div>
+    </div>`;
+  }).join('')}`;
 }
 function renderAdminStudents(){
   const students = Object.values(DB.users).filter(u=>u.role==='student').sort((a,b)=>a.name.localeCompare(b.name));
@@ -1444,31 +1433,39 @@ function attachAdminHandlers(){
   };
   document.querySelectorAll('[data-del-dept]').forEach(el=>{
     el.onclick = async ()=>{
-      DB.departments = DB.departments.filter(d=>d!==el.dataset.delDept);
+      const dept = el.dataset.delDept;
+      if(!confirm(`Remove ${dept}? Its sections list will be removed too.`)) return;
+      DB.departments = DB.departments.filter(d=>d!==dept);
+      delete DB.sections[dept];
       await saveKey('departments', DB.departments);
+      await saveKey('sections', DB.sections);
       render();
     };
   });
-  const sectionsDeptSel = document.getElementById('sections-dept-select');
-  if(sectionsDeptSel) sectionsDeptSel.onchange = ()=>{ state.sectionsFilterDept = sectionsDeptSel.value; state.err=''; render(); };
-  const addSectionBtn = document.getElementById('add-section-btn');
-  if(addSectionBtn) addSectionBtn.onclick = async ()=>{
-    const dept = document.getElementById('sections-dept-select').value;
-    const nameEl = document.getElementById('new-section-name');
-    const name = nameEl.value.trim();
+  document.querySelectorAll('.add-section-input').forEach(input=>{
+    input.onkeydown = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); addSectionFor(input.dataset.dept, input.value); } };
+  });
+  document.querySelectorAll('.add-section-btn').forEach(btn=>{
+    btn.onclick = ()=>{
+      const input = document.querySelector(`.add-section-input[data-dept="${CSS.escape(btn.dataset.dept)}"]`);
+      addSectionFor(btn.dataset.dept, input ? input.value : '');
+    };
+  });
+  async function addSectionFor(dept, rawName){
+    const name = (rawName||'').trim();
     if(!name){ state.err='Enter a section name.'; render(); return; }
     if(!DB.sections[dept]) DB.sections[dept] = [];
     if(DB.sections[dept].some(s=>normSection(s)===normSection(name))){ state.err='That section already exists for this department.'; render(); return; }
     DB.sections[dept].push(name);
     await saveKey('sections', DB.sections);
-    state.sectionsFilterDept = dept;
     state.err='';
     render();
-  };
-  document.querySelectorAll('[data-del-section]').forEach(el=>{
+  }
+  document.querySelectorAll('[data-del-section-dept]').forEach(el=>{
     el.onclick = async ()=>{
-      const dept = state.sectionsFilterDept || DB.departments[0];
-      DB.sections[dept] = (DB.sections[dept]||[]).filter(s=>s!==el.dataset.delSection);
+      const dept = el.dataset.delSectionDept;
+      const name = el.dataset.delSectionName;
+      DB.sections[dept] = (DB.sections[dept]||[]).filter(s=>s!==name);
       await saveKey('sections', DB.sections);
       render();
     };
