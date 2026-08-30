@@ -1202,23 +1202,24 @@ function renderAdminStudents(){
     <button class="btn-ghost" style="width:100%; margin-top:8px;" id="cancel-student-edit-btn">Cancel</button>
   </div>
   ` : ''}
-  <div class="card" style="margin-bottom:18px;">
-    <label style="display:block; margin-bottom:10px;">Department</label>
-    <div style="display:flex; flex-wrap:wrap; gap:8px;">
-      <button class="dept-tab-btn ${deptFilter==='all'?'btn-primary':'btn-ghost'}" data-dept="all">All (${allStudents.length})</button>
+  <div class="card student-toolbar">
+    <div class="dept-chip-row">
+      <button class="dept-chip ${deptFilter==='all'?'active':''}" data-dept="all">All students <span class="chip-count">${allStudents.length}</span></button>
       ${DB.departments.map(dep=>{
         const count = allStudents.filter(s=>s.department===dep).length;
-        return `<button class="dept-tab-btn ${deptFilter===dep?'btn-primary':'btn-ghost'}" data-dept="${dep}">${dep} (${count})</button>`;
+        return `<button class="dept-chip ${deptFilter===dep?'active':''}" data-dept="${dep}">${dep} <span class="chip-count">${count}</span></button>`;
       }).join('')}
     </div>
+    <div class="field student-search-field">
+      <label>Search ${deptFilter==='all'?'all departments':'in ' + deptFilter}</label>
+      <input id="student-search" placeholder="Name or student ID">
+    </div>
   </div>
-  <div class="card" style="max-width:320px; margin-bottom:18px;">
-    <div class="field" style="margin-bottom:0;"><label>Search ${deptFilter==='all'?'all departments':'in ' + deptFilter}</label><input id="student-search" placeholder="Name or student ID"></div>
-  </div>
+  <div class="section-title">${deptFilter==='all' ? 'All students' : deptFilter} <span class="pill gold">${students.length}</span></div>
   <div class="card" style="padding:0;">
     <table id="student-table">
       <tr><th>Name</th><th>ID</th><th>Department</th><th>Section</th><th></th></tr>
-      ${students.map(s=>`<tr data-student-row="${s.id}" data-student-search="${(s.name+' '+s.id).toLowerCase()}"><td>${s.name}</td><td class="mono">${s.id}</td><td><span class="badge-dept">${s.department}</span></td><td>${s.section||'—'}</td><td><button class="btn-ghost" data-edit-student="${s.id}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-reset-student="${s.id}">Reset password</button></td></tr>`).join('') || `<tr><td colspan="5" class="empty">No student accounts yet.</td></tr>`}
+      ${students.map(s=>`<tr data-student-row="${s.id}" data-student-search="${(s.name+' '+s.id).toLowerCase()}"><td>${s.name}</td><td class="mono">${s.id}</td><td><span class="badge-dept">${s.department}</span></td><td>${s.section||'—'}</td><td><button class="btn-ghost" data-edit-student="${s.id}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-reset-student="${s.id}">Reset password</button></td></tr>`).join('') || `<tr><td colspan="5" class="empty">No students in ${deptFilter==='all'?'the system':'this department'} yet.</td></tr>`}
     </table>
   </div>`;
 }
@@ -1494,7 +1495,7 @@ function attachAdminHandlers(){
       tr.style.display = tr.dataset.studentSearch.includes(q) ? '' : 'none';
     });
   };
-  document.querySelectorAll('.dept-tab-btn').forEach(el=>{
+  document.querySelectorAll('.dept-chip').forEach(el=>{
     el.onclick = ()=>{
       state.studentDeptFilter = el.dataset.dept;
       render();
