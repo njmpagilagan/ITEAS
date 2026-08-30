@@ -439,35 +439,44 @@ function attachStudentHandlers(){
   if(state.studentSubRoute==='profile') attachProfileHandlers();
 }
 async function tryUseToken(rawCode){
-  if(!rawCode){ state.err='Enter or scan a code first.'; render(); return; }
+  const fail = (msg)=>{
+    state.err = msg;
+    // close the camera on any validation failure — otherwise this error renders
+    // invisibly underneath the still-open camera overlay, and scanning just silently
+    // keeps re-rejecting the same code every frame with no visible feedback at all
+    stopCamera();
+    state.cameraOpen = false;
+    render();
+  };
+  if(!rawCode){ fail('Enter or scan a code first.'); return; }
   const code = rawCode.trim().toUpperCase();
   // pull the latest codes from storage — the officer may have generated/rotated one since this tab loaded
   DB.tokens = await fetchKey('tokens', DB.tokens);
   const tok = DB.tokens[code];
-  if(!tok){ state.err='That code is not valid. Ask the officer for the current QR.'; render(); return; }
+  if(!tok){ fail('That code is not valid. Ask the officer for the current QR.'); return; }
   if((Date.now() - tok.createdAt) > TOKEN_TTL_MS){
-    state.err='This QR code has expired. It refreshes often — ask the officer to show the current one.';
-    render(); return;
+    fail('This QR code has expired. It refreshes often — ask the officer to show the current one.');
+    return;
   }
   if(tok.scope === 'section'){
     if(tok.department !== state.currentUser.department){
-      state.err=`This QR is for ${tok.department}. You're registered under ${state.currentUser.department}, so it can't be used to check you in.`;
-      render(); return;
+      fail(`This QR is for ${tok.department}. You're registered under ${state.currentUser.department}, so it can't be used to check you in.`);
+      return;
     }
     if(normSection(tok.section) !== normSection(state.currentUser.section)){
-      state.err=`This QR is for section ${tok.section}. You're registered under ${state.currentUser.section}, so it can't be used to check you in.`;
-      render(); return;
+      fail(`This QR is for section ${tok.section}. You're registered under ${state.currentUser.section}, so it can't be used to check you in.`);
+      return;
     }
   } else if(tok.scope === 'department'){
     if(tok.department !== state.currentUser.department){
-      state.err=`This QR is for ${tok.department}. You're registered under ${state.currentUser.department}, so it can't be used to check you in.`;
-      render(); return;
+      fail(`This QR is for ${tok.department}. You're registered under ${state.currentUser.department}, so it can't be used to check you in.`);
+      return;
     }
   }
   // scope === 'ssg' skips department/section checks entirely
   const u = state.currentUser;
   const ev = DB.events.find(e=>e.id===tok.eventId);
-  if(!ev){ state.err='This event no longer exists.'; render(); return; }
+  if(!ev){ fail('This event no longer exists.'); return; }
   // pull the latest attendance log too, so duplicate/order checks reflect other devices
   DB.attendance = await fetchKey('attendance', DB.attendance);
   let record = DB.attendance.find(a=>a.eventId===ev.id && a.studentId===u.id);
@@ -475,12 +484,12 @@ async function tryUseToken(rawCode){
   const sessLabel = session.toUpperCase();
   const inField = session + 'TimeIn', outField = session + 'TimeOut';
   if(tok.phase==='out'){
-    if(!record || !record[inField]){ state.err=`You need to time in for ${sessLabel} first before you can time out.`; render(); return; }
-    if(record[outField]){ state.err=`You already timed out for ${sessLabel} on this event.`; render(); return; }
+    if(!record || !record[inField]){ fail(`You need to time in for ${sessLabel} first before you can time out.`); return; }
+    if(record[outField]){ fail(`You already timed out for ${sessLabel} on this event.`); return; }
     record[outField] = Date.now();
     record.tokenUsed = code;
   } else {
-    if(record && record[inField]){ state.err=`You already timed in for ${sessLabel} on this event.`; render(); return; }
+    if(record && record[inField]){ fail(`You already timed in for ${sessLabel} on this event.`); return; }
     if(!record){
       record = {id: uid('att'), eventId:ev.id, eventName:ev.name, department:u.department, studentId:u.id, studentName:u.name, section:u.section, amTimeIn:null, amTimeOut:null, pmTimeIn:null, pmTimeOut:null, tokenUsed:null};
       DB.attendance.push(record);
