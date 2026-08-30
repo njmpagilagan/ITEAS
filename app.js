@@ -108,6 +108,7 @@ let state = {
   officerTokenCreatedAt:null,
   officerRotating:false,
   officerPhase:'in',       // 'in' (time-in) or 'out' (time-out)
+  officerSession:'am',     // 'am' or 'pm' (only relevant for whole-day events)
   newEventDraft:{name:'', date:'', departments:[...DEFAULT_DEPTS], sessionType:'full'},
   newOfficerDraft:{name:'', username:'', password:'', department:DEFAULT_DEPTS[0], section:'', type:'section'},
   adminFilterEvent:'all',
@@ -563,9 +564,9 @@ function stopCamera(){
 function stopQrRotation(){
   if(qrRotateTimer){ clearInterval(qrRotateTimer); qrRotateTimer=null; }
 }
-async function generateRotatingToken(eventId, department, section, phase, scope){
+async function generateRotatingToken(eventId, department, section, phase, scope, session){
   const token = uid('qr').toUpperCase();
-  DB.tokens[token] = {eventId, department, section, phase, scope: scope || 'section', createdAt: Date.now()};
+  DB.tokens[token] = {eventId, department, section, phase, scope: scope || 'section', session: session || 'am', createdAt: Date.now()};
   // prune this desk's old expired tokens so storage doesn't grow forever
   Object.keys(DB.tokens).forEach(t=>{
     const info = DB.tokens[t];
@@ -577,21 +578,21 @@ async function generateRotatingToken(eventId, department, section, phase, scope)
   state.officerToken = token;
   state.officerTokenCreatedAt = Date.now();
 }
-async function startQrRotation(eventId, department, section, phase, scope){
+async function startQrRotation(eventId, department, section, phase, scope, session){
   stopQrRotation();
   lastRenderedQrToken = null;
-  await generateRotatingToken(eventId, department, section, phase, scope);
+  await generateRotatingToken(eventId, department, section, phase, scope, session);
   render();
-  qrRotateTimer = setInterval(()=>officerTick(eventId, department, section, phase, scope), 2000);
+  qrRotateTimer = setInterval(()=>officerTick(eventId, department, section, phase, scope, session), 2000);
 }
-async function officerTick(eventId, department, section, phase, scope){
+async function officerTick(eventId, department, section, phase, scope, session){
   if(!state.officerRotating || !state.officerToken) return;
   // pull the latest attendance log so we can tell if someone just used this code
   DB.attendance = await fetchKey('attendance', DB.attendance);
   const consumed = DB.attendance.some(a => a.tokenUsed === state.officerToken);
   const elapsed = Date.now() - state.officerTokenCreatedAt;
   if(consumed || elapsed >= ROTATE_MS){
-    await generateRotatingToken(eventId, department, section, phase, scope);
+    await generateRotatingToken(eventId, department, section, phase, scope, session);
     render(); // full render only when the token actually changes, so the QR redraws just once
     return;
   }
@@ -663,8 +664,8 @@ function renderOfficerAttendees(myEvents){
   const activeId = state.officerActiveEventId || (myEvents[0] && myEvents[0].id);
   const ev = myEvents.find(e=>e.id===activeId);
   const mySection = state.currentUser.section;
-  const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id && a.department===state.currentUser.department && (!mySection || normSection(a.section)===normSection(mySection))).sort((a,b)=>(b.timeIn||0)-(a.timeIn||0)) : [];
-  const complete = rows.filter(r=>r.timeIn && r.timeOut).length;
+  const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id && a.department===state.currentUser.department && (!mySection || normSection(a.section)===normSection(mySection))).sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0)) : [];
+  const complete = rows.filter(r=>(r.amTimeIn&&r.amTimeOut)||(r.pmTimeIn&&r.pmTimeOut)).length;
   return `
   <div class="page-head"><h1>Attendees</h1><p>Live list for ${mySection ? "your section's desk" : "your whole department's desk"}.</p></div>
   ${myEvents.length===0 ? `<div class="empty">No events yet.</div>` : `
@@ -678,7 +679,7 @@ function renderOfficerAttendees(myEvents){
   </div>
   <div class="grid">
     <div class="stat"><div class="num">${rows.length}</div><div class="lbl">Timed in</div></div>
-    <div class="stat"><div class="num">${complete}</div><div class="lbl">Completed (in &amp; out)</div></div>
+    <div class="stat"><div class="num">${complete}</div><div class="lbl">Completed at least one session</div></div>
   </div>
   <div style="margin-bottom:18px;">
     <button class="btn-danger" id="reset-event-attendance-btn" ${rows.length===0?'disabled':''}>Reset attendance for this event (${rows.length})</button>
@@ -686,8 +687,8 @@ function renderOfficerAttendees(myEvents){
   </div>
   <div class="card" style="padding:0;">
     <table id="officer-att-table">
-      <tr><th>Student</th><th>Section</th><th>Time in</th><th>Time out</th><th>Status</th><th></th></tr>
-      ${rows.map(r=>`<tr><td>${r.studentName}</td><td>${r.section}</td><td>${r.timeIn?fmtDate(r.timeIn):'—'}</td><td>${r.timeOut?fmtDate(r.timeOut):'—'}</td><td>${r.timeIn && r.timeOut ? '<span class="pill green">Present</span>' : '<span class="pill gold">Time-in only</span>'}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="6" class="empty">No check-ins yet for this event.</td></tr>`}
+      <tr><th>Student</th><th>Section</th><th>AM in</th><th>AM out</th><th>PM in</th><th>PM out</th><th>Status</th><th></th></tr>
+      ${rows.map(r=>`<tr><td>${r.studentName}</td><td>${r.section}</td><td>${r.amTimeIn?fmtDate(r.amTimeIn):'—'}</td><td>${r.amTimeOut?fmtDate(r.amTimeOut):'—'}</td><td>${r.pmTimeIn?fmtDate(r.pmTimeIn):'—'}</td><td>${r.pmTimeOut?fmtDate(r.pmTimeOut):'—'}</td><td>${attendanceStatusPill(r, ev)}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="8" class="empty">No check-ins yet for this event.</td></tr>`}
     </table>
   </div>
   `}`;
@@ -707,6 +708,9 @@ function renderSsg(){
 }
 function renderSsgGenerate(allEvents){
   const activeId = state.officerActiveEventId || (allEvents[0] && allEvents[0].id);
+  const activeEvent = allEvents.find(e=>e.id===activeId);
+  const evSession = eventSessionType(activeEvent);
+  const session = evSession==='full' ? (state.officerSession || 'am') : evSession;
   const remaining = state.officerRotating && state.officerTokenCreatedAt
     ? Math.max(0, Math.ceil((ROTATE_MS - (Date.now()-state.officerTokenCreatedAt))/1000)) : null;
   return `
@@ -719,6 +723,15 @@ function renderSsgGenerate(allEvents){
         ${allEvents.map(e=>`<option value="${e.id}" ${e.id===activeId?'selected':''}>${e.name} — ${e.date}</option>`).join('')}
       </select>
     </div>
+    ${evSession==='full' ? `
+    <div class="field">
+      <label>Session</label>
+      <div class="auth-tabs" style="margin-bottom:0;">
+        <div class="auth-tab session-tab ${session==='am'?'active':''}" data-session="am" style="${state.officerRotating?'pointer-events:none; opacity:0.6;':''}">AM</div>
+        <div class="auth-tab session-tab ${session==='pm'?'active':''}" data-session="pm" style="${state.officerRotating?'pointer-events:none; opacity:0.6;':''}">PM</div>
+      </div>
+    </div>
+    ` : `<p class="hint" style="margin-top:-6px; margin-bottom:14px;">This event is ${evSession.toUpperCase()}-only — every code here is for the ${evSession.toUpperCase()} session.</p>`}
     <div class="field">
       <label>Which check-in is this?</label>
       <div class="auth-tabs" style="margin-bottom:0;">
@@ -735,7 +748,7 @@ function renderSsgGenerate(allEvents){
   </div>
   ${state.officerRotating && state.officerToken ? `
     <div class="qr-box" style="max-width:320px; margin-top:20px;">
-      <div class="pill ${state.officerPhase==='in'?'green':'gold'}" style="margin-bottom:12px;">${state.officerPhase==='in'?'TIME IN':'TIME OUT'}</div>
+      <div class="pill ${state.officerPhase==='in'?'green':'gold'}" style="margin-bottom:12px;">${session.toUpperCase()} ${state.officerPhase==='in'?'TIME IN':'TIME OUT'}</div>
       <div id="qr-render"></div>
       <div class="code-text">${state.officerToken}</div>
       <div class="pill gold" id="qr-countdown" style="margin-top:12px;">Refreshes in ${remaining}s</div>
@@ -747,8 +760,8 @@ function renderSsgGenerate(allEvents){
 function renderSsgAttendees(allEvents){
   const activeId = state.officerActiveEventId || (allEvents[0] && allEvents[0].id);
   const ev = allEvents.find(e=>e.id===activeId);
-  const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id).sort((a,b)=>(b.timeIn||0)-(a.timeIn||0)) : [];
-  const complete = rows.filter(r=>r.timeIn && r.timeOut).length;
+  const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id).sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0)) : [];
+  const complete = rows.filter(r=>(r.amTimeIn&&r.amTimeOut)||(r.pmTimeIn&&r.pmTimeOut)).length;
   return `
   <div class="page-head"><h1>Attendees</h1><p>Live list across every department and section for this event.</p></div>
   ${allEvents.length===0 ? `<div class="empty">No events yet.</div>` : `
@@ -762,7 +775,7 @@ function renderSsgAttendees(allEvents){
   </div>
   <div class="grid">
     <div class="stat"><div class="num">${rows.length}</div><div class="lbl">Timed in</div></div>
-    <div class="stat"><div class="num">${complete}</div><div class="lbl">Completed (in &amp; out)</div></div>
+    <div class="stat"><div class="num">${complete}</div><div class="lbl">Completed at least one session</div></div>
   </div>
   <div style="margin-bottom:18px;">
     <button class="btn-danger" id="reset-event-attendance-btn" ${rows.length===0?'disabled':''}>Reset attendance for this event (${rows.length})</button>
@@ -770,8 +783,8 @@ function renderSsgAttendees(allEvents){
   </div>
   <div class="card" style="padding:0;">
     <table id="officer-att-table">
-      <tr><th>Student</th><th>Department</th><th>Section</th><th>Time in</th><th>Time out</th><th>Status</th><th></th></tr>
-      ${rows.map(r=>`<tr><td>${r.studentName}</td><td><span class="badge-dept">${r.department}</span></td><td>${r.section}</td><td>${r.timeIn?fmtDate(r.timeIn):'—'}</td><td>${r.timeOut?fmtDate(r.timeOut):'—'}</td><td>${r.timeIn && r.timeOut ? '<span class="pill green">Present</span>' : '<span class="pill gold">Time-in only</span>'}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="7" class="empty">No check-ins yet for this event.</td></tr>`}
+      <tr><th>Student</th><th>Department</th><th>Section</th><th>AM in</th><th>AM out</th><th>PM in</th><th>PM out</th><th>Status</th><th></th></tr>
+      ${rows.map(r=>`<tr><td>${r.studentName}</td><td><span class="badge-dept">${r.department}</span></td><td>${r.section}</td><td>${r.amTimeIn?fmtDate(r.amTimeIn):'—'}</td><td>${r.amTimeOut?fmtDate(r.amTimeOut):'—'}</td><td>${r.pmTimeIn?fmtDate(r.pmTimeIn):'—'}</td><td>${r.pmTimeOut?fmtDate(r.pmTimeOut):'—'}</td><td>${attendanceStatusPill(r, ev)}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="9" class="empty">No check-ins yet for this event.</td></tr>`}
     </table>
   </div>
   `}`;
@@ -791,8 +804,18 @@ function attachSsgHandlers(){
     const eventId = document.getElementById('officer-event-select').value;
     state.officerActiveEventId = eventId;
     state.officerRotating = true;
-    await startQrRotation(eventId, null, null, state.officerPhase, 'ssg');
+    const ev = DB.events.find(e=>e.id===eventId);
+    const evSession = eventSessionType(ev);
+    const session = evSession==='full' ? (state.officerSession || 'am') : evSession;
+    await startQrRotation(eventId, null, null, state.officerPhase, 'ssg', session);
   };
+  document.querySelectorAll('.session-tab').forEach(el=>{
+    el.onclick = ()=>{
+      if(state.officerRotating) return;
+      state.officerSession = el.dataset.session;
+      render();
+    };
+  });
   document.querySelectorAll('.phase-tab').forEach(el=>{
     el.onclick = ()=>{
       if(state.officerRotating) return;
@@ -861,8 +884,18 @@ function attachOfficerHandlers(){
     state.officerActiveEventId = eventId;
     state.officerRotating = true;
     const scope = state.currentUser.section ? 'section' : 'department';
-    await startQrRotation(eventId, state.currentUser.department, state.currentUser.section || null, state.officerPhase, scope);
+    const ev = DB.events.find(e=>e.id===eventId);
+    const evSession = eventSessionType(ev);
+    const session = evSession==='full' ? (state.officerSession || 'am') : evSession;
+    await startQrRotation(eventId, state.currentUser.department, state.currentUser.section || null, state.officerPhase, scope, session);
   };
+  document.querySelectorAll('.session-tab').forEach(el=>{
+    el.onclick = ()=>{
+      if(state.officerRotating) return;
+      state.officerSession = el.dataset.session;
+      render();
+    };
+  });
   document.querySelectorAll('.phase-tab').forEach(el=>{
     el.onclick = ()=>{
       if(state.officerRotating) return;
@@ -1014,21 +1047,21 @@ function renderAdmin(){
 }
 function renderAdminOverview(){
   const totalAtt = DB.attendance.length;
-  const totalComplete = DB.attendance.filter(a=>a.timeIn && a.timeOut).length;
+  const totalComplete = DB.attendance.filter(a=>(a.amTimeIn&&a.amTimeOut)||(a.pmTimeIn&&a.pmTimeOut)).length;
   const totalEvents = DB.events.length;
   const officerCount = Object.values(DB.users).filter(u=>u.role==='officer' || u.role==='ssg').length;
   const byEvent = {};
   DB.attendance.forEach(a=>{
     if(!byEvent[a.eventName]) byEvent[a.eventName] = {timedIn:0, complete:0};
-    if(a.timeIn) byEvent[a.eventName].timedIn++;
-    if(a.timeIn && a.timeOut) byEvent[a.eventName].complete++;
+    if(a.amTimeIn || a.pmTimeIn) byEvent[a.eventName].timedIn++;
+    if((a.amTimeIn&&a.amTimeOut)||(a.pmTimeIn&&a.pmTimeOut)) byEvent[a.eventName].complete++;
   });
   return `
   <div class="page-head"><h1>Admin Overview</h1><p>School-wide attendance summary, live across every department.</p></div>
   <div class="grid">
     <div class="stat"><div class="num">${totalEvents}</div><div class="lbl">Events this year</div></div>
     <div class="stat"><div class="num">${totalAtt}</div><div class="lbl">Total timed in</div></div>
-    <div class="stat"><div class="num">${totalComplete}</div><div class="lbl">Completed (in &amp; out)</div></div>
+    <div class="stat"><div class="num">${totalComplete}</div><div class="lbl">Completed at least one session</div></div>
     <div class="stat"><div class="num">${officerCount}</div><div class="lbl">Officer accounts</div></div>
   </div>
   <div class="section-title">Attendance by event</div>
@@ -1211,7 +1244,7 @@ function renderAdminOfficers(){
 function renderAdminRecords(){
   const events = ['all', ...DB.events.map(e=>e.name)];
   const depts = ['all', ...DB.departments];
-  let rows = DB.attendance.slice().sort((a,b)=>(b.timeIn||0)-(a.timeIn||0));
+  let rows = DB.attendance.slice().sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0));
   if(state.adminFilterEvent!=='all') rows = rows.filter(r=>r.eventName===state.adminFilterEvent);
   if(state.adminFilterDept!=='all') rows = rows.filter(r=>r.department===state.adminFilterDept);
   const canBulkReset = state.adminFilterEvent !== 'all';
@@ -1237,8 +1270,11 @@ function renderAdminRecords(){
   </div>
   <div class="card" style="padding:0;">
     <table>
-      <tr><th>Student</th><th>Event</th><th>Department</th><th>Time in</th><th>Time out</th><th>Status</th><th></th></tr>
-      ${rows.map(r=>`<tr><td>${r.studentName} <span style="color:var(--ink-soft);">(${r.studentId})</span></td><td>${r.eventName}</td><td><span class="badge-dept">${r.department}</span></td><td>${r.timeIn?fmtDate(r.timeIn):'—'}</td><td>${r.timeOut?fmtDate(r.timeOut):'—'}</td><td>${r.timeIn && r.timeOut ? '<span class="pill green">Present</span>' : '<span class="pill gold">Time-in only</span>'}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="7" class="empty">No records match this filter.</td></tr>`}
+      <tr><th>Student</th><th>Event</th><th>Department</th><th>AM in</th><th>AM out</th><th>PM in</th><th>PM out</th><th>Status</th><th></th></tr>
+      ${rows.map(r=>{
+        const ev = DB.events.find(e=>e.id===r.eventId);
+        return `<tr><td>${r.studentName} <span style="color:var(--ink-soft);">(${r.studentId})</span></td><td>${r.eventName}</td><td><span class="badge-dept">${r.department}</span></td><td>${r.amTimeIn?fmtDate(r.amTimeIn):'—'}</td><td>${r.amTimeOut?fmtDate(r.amTimeOut):'—'}</td><td>${r.pmTimeIn?fmtDate(r.pmTimeIn):'—'}</td><td>${r.pmTimeOut?fmtDate(r.pmTimeOut):'—'}</td><td>${attendanceStatusPill(r, ev)}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`;
+      }).join('') || `<tr><td colspan="9" class="empty">No records match this filter.</td></tr>`}
     </table>
   </div>`;
 }
