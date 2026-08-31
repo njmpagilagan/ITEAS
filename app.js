@@ -125,6 +125,7 @@ let state = {
   editingStudentId:null,
   studentSearch:'',
   studentDeptFilter:'all',
+  officerTypeFilter:'all',
   lastResetPassword:null
 };
 
@@ -1227,7 +1228,12 @@ function renderAdminOfficers(){
   const d = state.newOfficerDraft;
   const editing = state.editingOfficerUsername;
   const type = d.type || 'section';
-  const officers = Object.values(DB.users).filter(u=>u.role==='officer' || u.role==='ssg');
+  const allOfficers = Object.values(DB.users).filter(u=>u.role==='officer' || u.role==='ssg');
+  const typedOfficers = allOfficers.map(o=>({...o, oType: o.role==='ssg' ? 'ssg' : (o.section ? 'section' : 'department')}));
+  const typeFilter = state.officerTypeFilter || 'all';
+  const officers = typeFilter==='all' ? typedOfficers : typedOfficers.filter(o=>o.oType===typeFilter);
+  const countFor = t => t==='all' ? typedOfficers.length : typedOfficers.filter(o=>o.oType===t).length;
+  const pillFor = t => t==='ssg' ? '<span class="pill gold">SSG</span>' : t==='department' ? '<span class="pill navy">Department</span>' : '<span class="pill green">Section</span>';
   return `
   <div class="page-head"><h1>Manage Officers</h1><p>Section officers cover one section; department officers cover every section in a department; SSG officers cover the whole school.</p></div>
   <div class="card" style="max-width:480px; margin-bottom:24px;">
@@ -1263,15 +1269,23 @@ function renderAdminOfficers(){
     <button class="btn-primary" style="width:100%;" id="create-officer-btn">${editing ? 'Save changes' : 'Create officer account'}</button>
     ${editing ? `<button class="btn-ghost" style="width:100%; margin-top:8px;" id="cancel-edit-officer-btn">Cancel</button>` : ''}
   </div>
-  <div class="section-title">All officers</div>
+  <div class="card student-toolbar">
+    <div class="dept-chip-row">
+      <button class="officer-type-filter-btn dept-chip ${typeFilter==='all'?'active':''}" data-type="all">All officers <span class="chip-count">${countFor('all')}</span></button>
+      <button class="officer-type-filter-btn dept-chip ${typeFilter==='section'?'active':''}" data-type="section">Section <span class="chip-count">${countFor('section')}</span></button>
+      <button class="officer-type-filter-btn dept-chip ${typeFilter==='department'?'active':''}" data-type="department">Department <span class="chip-count">${countFor('department')}</span></button>
+      <button class="officer-type-filter-btn dept-chip ${typeFilter==='ssg'?'active':''}" data-type="ssg">SSG <span class="chip-count">${countFor('ssg')}</span></button>
+    </div>
+    <div class="field student-search-field">
+      <label>Search</label>
+      <input id="officer-search" placeholder="Name or username">
+    </div>
+  </div>
+  <div class="section-title">${typeFilter==='all' ? 'All officers' : scopeLabel(typeFilter)} <span class="pill gold">${officers.length}</span></div>
   <div class="card" style="padding:0;">
-    <table>
+    <table id="officer-table">
       <tr><th>Name</th><th>Username</th><th>Type</th><th>Department</th><th>Section</th><th></th></tr>
-      ${officers.map(o=>{
-        const oType = o.role==='ssg' ? 'ssg' : (o.section ? 'section' : 'department');
-        const typePill = oType==='ssg' ? '<span class="pill gold">SSG</span>' : oType==='department' ? '<span class="pill green">Department</span>' : '<span class="pill green">Section</span>';
-        return `<tr><td>${o.name}</td><td class="mono">${o.username}</td><td>${typePill}</td><td>${oType==='ssg'?'—':`<span class="badge-dept">${o.department}</span>`}</td><td>${oType==='section' ? (o.section||'<span class="pill gold">not set</span>') : (oType==='department' ? '<span class="pill gold">all sections</span>' : '—')}</td><td><button class="btn-ghost" data-edit-officer="${o.username}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-del-officer="${o.username}">Remove</button></td></tr>`;
-      }).join('') || `<tr><td colspan="6" class="empty">No officer accounts yet.</td></tr>`}
+      ${officers.map(o=>`<tr data-officer-row="${o.username}" data-officer-search="${(o.name+' '+o.username).toLowerCase()}"><td>${o.name}</td><td class="mono">${o.username}</td><td>${pillFor(o.oType)}</td><td>${o.oType==='ssg'?'—':`<span class="badge-dept">${o.department}</span>`}</td><td>${o.oType==='section' ? (o.section||'<span class="pill gold">not set</span>') : (o.oType==='department' ? '<span class="pill gold">all sections</span>' : '—')}</td><td><button class="btn-ghost" data-edit-officer="${o.username}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-del-officer="${o.username}">Remove</button></td></tr>`).join('') || `<tr><td colspan="6" class="empty">No officers match this filter.</td></tr>`}
     </table>
   </div>`;
 }
@@ -1501,6 +1515,21 @@ function attachAdminHandlers(){
       render();
     };
   });
+  // officer type-filter chips share the .dept-chip style class — this runs after the
+  // handler above, so it correctly overrides onclick for the officer-specific chips
+  document.querySelectorAll('.officer-type-filter-btn').forEach(el=>{
+    el.onclick = ()=>{
+      state.officerTypeFilter = el.dataset.type;
+      render();
+    };
+  });
+  const officerSearchEl = document.getElementById('officer-search');
+  if(officerSearchEl) officerSearchEl.oninput = ()=>{
+    const q = officerSearchEl.value.trim().toLowerCase();
+    document.querySelectorAll('#officer-table tr[data-officer-row]').forEach(tr=>{
+      tr.style.display = tr.dataset.officerSearch.includes(q) ? '' : 'none';
+    });
+  };
   document.querySelectorAll('[data-edit-student]').forEach(el=>{
     el.onclick = ()=>{
       state.editingStudentId = el.dataset.editStudent;
