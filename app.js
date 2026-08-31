@@ -61,8 +61,40 @@ function normSection(s){ return (s||'').trim().toLowerCase(); }
 function eventSessionType(ev){ return (ev && ev.sessionType) || 'full'; }
 function scopeLabel(scope){ return scope==='ssg' ? 'SSG' : scope==='department' ? 'Department' : 'Section'; }
 function scopePill(scope){
-  const cls = scope==='ssg' ? 'gold' : scope==='department' ? 'green' : 'gold';
+  const cls = scope==='ssg' ? 'gold' : scope==='department' ? 'navy' : 'green';
   return `<span class="pill ${cls}">${scopeLabel(scope)}</span>`;
+}
+const ADMIN_PAGE_SIZE = 10;
+function paginate(list, page, pageSize){
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+  const clampedPage = Math.min(Math.max(1, page || 1), totalPages);
+  const start = (clampedPage-1)*pageSize;
+  return { items: list.slice(start, start+pageSize), totalPages, page: clampedPage };
+}
+function paginationControls(page, totalPages, idPrefix){
+  if(totalPages<=1) return '';
+  return `
+  <div class="pagination">
+    <button class="btn-ghost" id="${idPrefix}-prev-btn" ${page<=1?'disabled':''}>Previous</button>
+    <span class="page-info">Page ${page} of ${totalPages}</span>
+    <button class="btn-ghost" id="${idPrefix}-next-btn" ${page>=totalPages?'disabled':''}>Next</button>
+  </div>`;
+}
+function reRenderPreservingFocus(){
+  const active = document.activeElement;
+  const id = active && active.id;
+  const selStart = active && typeof active.selectionStart === 'number' ? active.selectionStart : null;
+  const selEnd = active && typeof active.selectionEnd === 'number' ? active.selectionEnd : null;
+  render();
+  if(id){
+    const el = document.getElementById(id);
+    if(el){
+      el.focus();
+      if(selStart !== null && el.setSelectionRange){
+        try{ el.setSelectionRange(selStart, selEnd); }catch(e){}
+      }
+    }
+  }
 }
 function attendanceStatusPill(record, ev){
   const st = eventSessionType(ev);
@@ -1224,50 +1256,63 @@ function renderAdminStudents(){
     </table>
   </div>`;
 }
-function renderAdminOfficers(){
+function renderOfficerModal(){
   const d = state.newOfficerDraft;
   const editing = state.editingOfficerUsername;
   const type = d.type || 'section';
+  return `
+  <div class="modal-overlay" id="officer-modal-overlay">
+    <div class="modal-card">
+      <button class="close-x" id="close-officer-modal-btn">&times;</button>
+      ${editing ? `<div class="pill gold" style="margin-bottom:14px;">Editing ${editing}</div>` : `<h3 style="margin-top:0;">Add officer account</h3>`}
+      <div class="field">
+        <label>Officer type</label>
+        <div class="auth-tabs" style="margin-bottom:0;">
+          <div class="auth-tab officer-type-tab ${type==='section'?'active':''}" data-type="section" style="${editing?'pointer-events:none; opacity:0.6;':''}">Section</div>
+          <div class="auth-tab officer-type-tab ${type==='department'?'active':''}" data-type="department" style="${editing?'pointer-events:none; opacity:0.6;':''}">Department</div>
+          <div class="auth-tab officer-type-tab ${type==='ssg'?'active':''}" data-type="ssg" style="${editing?'pointer-events:none; opacity:0.6;':''}">SSG</div>
+        </div>
+      </div>
+      <div class="field" style="margin-top:16px;"><label>Officer name</label><input id="of-name" value="${d.name}" placeholder="Maria Santos"></div>
+      <div class="field"><label>Username</label><input id="of-user" value="${d.username}" placeholder="${type==='ssg'?'ssg-officer1':type==='department'?'cs-dept-officer':'cs-officer'}" ${editing?'disabled style="background:var(--bg); color:var(--ink-soft);"':''}></div>
+      ${pwField('of-pw', 'Password', editing ? 'Leave blank to keep current password' : 'Set a password')}
+      ${type==='section' ? `
+      <div class="field">
+        <label>Department</label>
+        <select id="of-dept">${DB.departments.map(dep=>`<option ${d.department===dep?'selected':''}>${dep}</option>`).join('')}</select>
+      </div>
+      <div class="field">
+        <label>Section</label>
+        <select id="of-section">${sectionOptions(d.department || DB.departments[0], d.section)}</select>
+      </div>
+      ` : type==='department' ? `
+      <div class="field">
+        <label>Department</label>
+        <select id="of-dept">${DB.departments.map(dep=>`<option ${d.department===dep?'selected':''}>${dep}</option>`).join('')}</select>
+      </div>
+      <p class="hint" style="margin-top:-6px;">This officer's QR works for every section in that department — no single section is assigned.</p>
+      ` : `<p class="hint" style="margin-top:-6px;">SSG officers aren't tied to a department or section — their QR works for any student, anywhere.</p>`}
+      ${state.err ? `<div class="err">${state.err}</div>` : ''}
+      <button class="btn-primary" style="width:100%;" id="create-officer-btn">${editing ? 'Save changes' : 'Create officer account'}</button>
+      <button class="btn-ghost" style="width:100%; margin-top:8px;" id="close-officer-modal-btn-2">Cancel</button>
+    </div>
+  </div>`;
+}
+function renderAdminOfficers(){
+  const modalOpen = state.officerModalOpen || !!state.editingOfficerUsername;
   const allOfficers = Object.values(DB.users).filter(u=>u.role==='officer' || u.role==='ssg');
   const typedOfficers = allOfficers.map(o=>({...o, oType: o.role==='ssg' ? 'ssg' : (o.section ? 'section' : 'department')}));
   const typeFilter = state.officerTypeFilter || 'all';
-  const officers = typeFilter==='all' ? typedOfficers : typedOfficers.filter(o=>o.oType===typeFilter);
+  let filtered = typeFilter==='all' ? typedOfficers : typedOfficers.filter(o=>o.oType===typeFilter);
+  const q = (state.officerSearchQuery||'').trim().toLowerCase();
+  if(q) filtered = filtered.filter(o=>(o.name+' '+o.username).toLowerCase().includes(q));
   const countFor = t => t==='all' ? typedOfficers.length : typedOfficers.filter(o=>o.oType===t).length;
   const pillFor = t => t==='ssg' ? '<span class="pill gold">SSG</span>' : t==='department' ? '<span class="pill navy">Department</span>' : '<span class="pill green">Section</span>';
+  const { items: officers, totalPages, page } = paginate(filtered, state.officerPage, ADMIN_PAGE_SIZE);
   return `
-  <div class="page-head"><h1>Manage Officers</h1><p>Section officers cover one section; department officers cover every section in a department; SSG officers cover the whole school.</p></div>
-  <div class="card" style="max-width:480px; margin-bottom:24px;">
-    ${editing ? `<div class="pill gold" style="margin-bottom:14px;">Editing ${editing}</div>` : ''}
-    <div class="field">
-      <label>Officer type</label>
-      <div class="auth-tabs" style="margin-bottom:0;">
-        <div class="auth-tab officer-type-tab ${type==='section'?'active':''}" data-type="section" style="${editing?'pointer-events:none; opacity:0.6;':''}">Section</div>
-        <div class="auth-tab officer-type-tab ${type==='department'?'active':''}" data-type="department" style="${editing?'pointer-events:none; opacity:0.6;':''}">Department</div>
-        <div class="auth-tab officer-type-tab ${type==='ssg'?'active':''}" data-type="ssg" style="${editing?'pointer-events:none; opacity:0.6;':''}">SSG</div>
-      </div>
-    </div>
-    <div class="field" style="margin-top:16px;"><label>Officer name</label><input id="of-name" value="${d.name}" placeholder="Maria Santos"></div>
-    <div class="field"><label>Username</label><input id="of-user" value="${d.username}" placeholder="${type==='ssg'?'ssg-officer1':type==='department'?'cs-dept-officer':'cs-officer'}" ${editing?'disabled style="background:var(--bg); color:var(--ink-soft);"':''}></div>
-    ${pwField('of-pw', 'Password', editing ? 'Leave blank to keep current password' : 'Set a password')}
-    ${type==='section' ? `
-    <div class="field">
-      <label>Department</label>
-      <select id="of-dept">${DB.departments.map(dep=>`<option ${d.department===dep?'selected':''}>${dep}</option>`).join('')}</select>
-    </div>
-    <div class="field">
-      <label>Section</label>
-      <select id="of-section">${sectionOptions(d.department || DB.departments[0], d.section)}</select>
-    </div>
-    ` : type==='department' ? `
-    <div class="field">
-      <label>Department</label>
-      <select id="of-dept">${DB.departments.map(dep=>`<option ${d.department===dep?'selected':''}>${dep}</option>`).join('')}</select>
-    </div>
-    <p class="hint" style="margin-top:-6px;">This officer's QR works for every section in that department — no single section is assigned.</p>
-    ` : `<p class="hint" style="margin-top:-6px;">SSG officers aren't tied to a department or section — their QR works for any student, anywhere.</p>`}
-    ${state.err ? `<div class="err">${state.err}</div>` : ''}
-    <button class="btn-primary" style="width:100%;" id="create-officer-btn">${editing ? 'Save changes' : 'Create officer account'}</button>
-    ${editing ? `<button class="btn-ghost" style="width:100%; margin-top:8px;" id="cancel-edit-officer-btn">Cancel</button>` : ''}
+  <div class="page-head-row">
+    <div class="page-head" style="margin-bottom:0;"><h1>Manage Officers</h1><p>Section officers cover one section; department officers cover every section in a department; SSG officers cover the whole school.</p></div>
+    <button class="btn-gold" id="open-add-officer-btn">+ Add officer</button>
   </div>
   <div class="card student-toolbar">
     <div class="dept-chip-row">
@@ -1278,16 +1323,19 @@ function renderAdminOfficers(){
     </div>
     <div class="field student-search-field">
       <label>Search</label>
-      <input id="officer-search" placeholder="Name or username">
+      <input id="officer-search" value="${state.officerSearchQuery||''}" placeholder="Name or username">
     </div>
   </div>
-  <div class="section-title">${typeFilter==='all' ? 'All officers' : scopeLabel(typeFilter)} <span class="pill gold">${officers.length}</span></div>
+  <div class="section-title">${typeFilter==='all' ? 'All officers' : scopeLabel(typeFilter)} <span class="pill gold">${filtered.length}</span></div>
   <div class="card" style="padding:0;">
     <table id="officer-table">
       <tr><th>Name</th><th>Username</th><th>Type</th><th>Department</th><th>Section</th><th></th></tr>
-      ${officers.map(o=>`<tr data-officer-row="${o.username}" data-officer-search="${(o.name+' '+o.username).toLowerCase()}"><td>${o.name}</td><td class="mono">${o.username}</td><td>${pillFor(o.oType)}</td><td>${o.oType==='ssg'?'—':`<span class="badge-dept">${o.department}</span>`}</td><td>${o.oType==='section' ? (o.section||'<span class="pill gold">not set</span>') : (o.oType==='department' ? '<span class="pill gold">all sections</span>' : '—')}</td><td><button class="btn-ghost" data-edit-officer="${o.username}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-del-officer="${o.username}">Remove</button></td></tr>`).join('') || `<tr><td colspan="6" class="empty">No officers match this filter.</td></tr>`}
+      ${officers.map(o=>`<tr><td>${o.name}</td><td class="mono">${o.username}</td><td>${pillFor(o.oType)}</td><td>${o.oType==='ssg'?'—':`<span class="badge-dept">${o.department}</span>`}</td><td>${o.oType==='section' ? (o.section||'<span class="pill gold">not set</span>') : (o.oType==='department' ? '<span class="pill gold">all sections</span>' : '—')}</td><td><button class="btn-ghost" data-edit-officer="${o.username}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-del-officer="${o.username}">Remove</button></td></tr>`).join('') || `<tr><td colspan="6" class="empty">No officers match this filter.</td></tr>`}
     </table>
-  </div>`;
+  </div>
+  ${paginationControls(page, totalPages, 'officer')}
+  ${modalOpen ? renderOfficerModal() : ''}
+  `;
 }
 function renderAdminRecords(){
   const events = ['all', ...DB.events.map(e=>e.name)];
@@ -1386,6 +1434,26 @@ function attachAdminHandlers(){
       render();
     };
   });
+  const openAddOfficer = document.getElementById('open-add-officer-btn');
+  if(openAddOfficer) openAddOfficer.onclick = ()=>{
+    state.officerModalOpen = true;
+    state.newOfficerDraft = {name:'', username:'', password:'', department:DB.departments[0], section:'', type:'section'};
+    state.err='';
+    render();
+  };
+  const closeOfficerModal = ()=>{
+    state.officerModalOpen = false;
+    state.editingOfficerUsername = null;
+    state.newOfficerDraft = {name:'', username:'', password:'', department:DB.departments[0], section:'', type:'section'};
+    state.err='';
+    render();
+  };
+  const closeOfficerBtn1 = document.getElementById('close-officer-modal-btn');
+  if(closeOfficerBtn1) closeOfficerBtn1.onclick = closeOfficerModal;
+  const closeOfficerBtn2 = document.getElementById('close-officer-modal-btn-2');
+  if(closeOfficerBtn2) closeOfficerBtn2.onclick = closeOfficerModal;
+  const officerModalOverlay = document.getElementById('officer-modal-overlay');
+  if(officerModalOverlay) officerModalOverlay.onclick = (e)=>{ if(e.target === officerModalOverlay) closeOfficerModal(); };
   const createOf = document.getElementById('create-officer-btn');
   if(createOf) createOf.onclick = async ()=>{
     const name = document.getElementById('of-name').value.trim();
@@ -1416,6 +1484,7 @@ function attachAdminHandlers(){
       }
     }
     await saveKey('users', DB.users);
+    state.officerModalOpen = false;
     state.newOfficerDraft = {name:'', username:'', password:'', department:DB.departments[0], section:'', type:'section'};
     state.editingOfficerUsername = null;
     state.err='';
@@ -1431,13 +1500,6 @@ function attachAdminHandlers(){
       render();
     };
   });
-  const cancelEdit = document.getElementById('cancel-edit-officer-btn');
-  if(cancelEdit) cancelEdit.onclick = ()=>{
-    state.editingOfficerUsername = null;
-    state.newOfficerDraft = {name:'', username:'', password:'', department:DB.departments[0], section:'', type:'section'};
-    state.err='';
-    render();
-  };
   document.querySelectorAll('[data-del-officer]').forEach(el=>{
     el.onclick = async ()=>{
       delete DB.users[el.dataset.delOfficer];
@@ -1445,6 +1507,23 @@ function attachAdminHandlers(){
       render();
     };
   });
+  document.querySelectorAll('.officer-type-filter-btn').forEach(el=>{
+    el.onclick = ()=>{
+      state.officerTypeFilter = el.dataset.type;
+      state.officerPage = 1;
+      render();
+    };
+  });
+  const officerSearch = document.getElementById('officer-search');
+  if(officerSearch) officerSearch.oninput = ()=>{
+    state.officerSearchQuery = officerSearch.value;
+    state.officerPage = 1;
+    reRenderPreservingFocus();
+  };
+  const officerPrevBtn = document.getElementById('officer-prev-btn');
+  if(officerPrevBtn) officerPrevBtn.onclick = ()=>{ state.officerPage = Math.max(1, (state.officerPage||1)-1); render(); };
+  const officerNextBtn = document.getElementById('officer-next-btn');
+  if(officerNextBtn) officerNextBtn.onclick = ()=>{ state.officerPage = (state.officerPage||1)+1; render(); };
   const fe = document.getElementById('filter-event');
   if(fe) fe.onchange = ()=>{ state.adminFilterEvent = fe.value; render(); };
   const fd = document.getElementById('filter-dept');
@@ -1509,27 +1588,12 @@ function attachAdminHandlers(){
       tr.style.display = tr.dataset.studentSearch.includes(q) ? '' : 'none';
     });
   };
-  document.querySelectorAll('.dept-chip').forEach(el=>{
+  document.querySelectorAll('.dept-chip:not(.officer-type-filter-btn)').forEach(el=>{
     el.onclick = ()=>{
       state.studentDeptFilter = el.dataset.dept;
       render();
     };
   });
-  // officer type-filter chips share the .dept-chip style class — this runs after the
-  // handler above, so it correctly overrides onclick for the officer-specific chips
-  document.querySelectorAll('.officer-type-filter-btn').forEach(el=>{
-    el.onclick = ()=>{
-      state.officerTypeFilter = el.dataset.type;
-      render();
-    };
-  });
-  const officerSearchEl = document.getElementById('officer-search');
-  if(officerSearchEl) officerSearchEl.oninput = ()=>{
-    const q = officerSearchEl.value.trim().toLowerCase();
-    document.querySelectorAll('#officer-table tr[data-officer-row]').forEach(tr=>{
-      tr.style.display = tr.dataset.officerSearch.includes(q) ? '' : 'none';
-    });
-  };
   document.querySelectorAll('[data-edit-student]').forEach(el=>{
     el.onclick = ()=>{
       state.editingStudentId = el.dataset.editStudent;
