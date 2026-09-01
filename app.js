@@ -191,6 +191,8 @@ let state = {
   editingStudentId:null,
   studentSearch:'',
   studentDeptFilter:'all',
+  studentSearchQuery:'',
+  studentPage:1,
   officerTypeFilter:'all',
   officerModalOpen:false,
   officerPage:1,
@@ -198,6 +200,7 @@ let state = {
   recordsShown:false,
   showAttendanceStudentId:null,
   recordsPage:1,
+  attendeesPage:1,
   lastResetPassword:null
 };
 
@@ -425,7 +428,7 @@ function attachShellHandlers(){
         state.ssgSubRoute = sub;
       }
       if(role==='admin'){ state.adminSubRoute = sub; }
-      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null; state.recordsShown=false; state.showAttendanceStudentId=null;
+      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null; state.recordsShown=false; state.showAttendanceStudentId=null; state.attendeesPage=1;
       // an account's own department/section may have been changed by admin since login —
       // always refresh it so a stale, already-logged-in session doesn't keep enforcing old rules
       if(role==='officer' || role==='ssg' || role==='student'){
@@ -742,7 +745,7 @@ function renderOfficerGenerate(myEvents){
         <div class="auth-tab session-tab ${session==='pm'?'active':''}" data-session="pm" style="${state.officerRotating?'pointer-events:none; opacity:0.6;':''}">PM</div>
       </div>
     </div>
-    ` : `<p class="hint" style="margin-top:-6px; margin-bottom:14px;">This event is ${evSession.toUpperCase()}-only — every code here is for the ${evSession.toUpperCase()} session.</p>`}
+    ` : `<p class="hint" style="margin-top:-6px; margin-bottom:10px;">This event is ${evSession.toUpperCase()}-only — every code here is for the ${evSession.toUpperCase()} session.</p>`}
     <div class="field">
       <label>Which check-in is this?</label>
       <div class="auth-tabs" style="margin-bottom:0;">
@@ -759,7 +762,7 @@ function renderOfficerGenerate(myEvents){
   </div>
   ${state.officerRotating && state.officerToken ? `
     <div class="qr-box" style="max-width:320px; margin-top:20px;">
-      <div class="pill ${state.officerPhase==='in'?'green':'gold'}" style="margin-bottom:12px;">${session.toUpperCase()} ${state.officerPhase==='in'?'TIME IN':'TIME OUT'}</div>
+      <div class="pill ${state.officerPhase==='in'?'green':'gold'}" style="margin-bottom:10px;">${session.toUpperCase()} ${state.officerPhase==='in'?'TIME IN':'TIME OUT'}</div>
       <div id="qr-render"></div>
       <div class="code-text">${state.officerToken}</div>
       <div class="pill gold" id="qr-countdown" style="margin-top:12px;">Refreshes in ${remaining}s</div>
@@ -775,10 +778,11 @@ function renderOfficerAttendees(myEvents){
   const myScope = mySection ? 'section' : 'department';
   const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id && a.scope===myScope && a.department===state.currentUser.department && (!mySection || normSection(a.section)===normSection(mySection))).sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0)) : [];
   const complete = rows.filter(r=>(r.amTimeIn&&r.amTimeOut)||(r.pmTimeIn&&r.pmTimeOut)).length;
+  const { items: pageRows, totalPages, page } = paginate(rows, state.attendeesPage, ADMIN_PAGE_SIZE);
   return `
   <div class="page-head"><h1>Attendees</h1><p>Live list for ${mySection ? "your section's desk" : "your whole department's desk"} — only check-ins made through your own QR, not other desks.</p></div>
   ${myEvents.length===0 ? `<div class="empty">No events yet.</div>` : `
-  <div class="card" style="max-width:300px; margin-bottom:18px;">
+  <div class="card" style="max-width:300px; margin-bottom:10px;">
     <div class="field" style="margin-bottom:0;">
       <label>Event</label>
       <select id="officer-att-event-select">
@@ -790,16 +794,17 @@ function renderOfficerAttendees(myEvents){
     <div class="stat"><div class="num">${rows.length}</div><div class="lbl">Timed in</div></div>
     <div class="stat"><div class="num">${complete}</div><div class="lbl">Completed at least one session</div></div>
   </div>
-  <div style="margin-bottom:18px;">
+  <div style="margin-bottom:10px;">
     <button class="btn-danger" id="reset-event-attendance-btn" ${rows.length===0?'disabled':''}>Reset attendance for this event (${rows.length})</button>
     <p class="hint" style="margin-top:8px;">Clears check-ins made through ${mySection ? 'your section' : 'your department'}'s desk only — records from other desks for the same event are untouched. Students will need to scan in again from scratch.</p>
   </div>
   <div class="card" style="padding:0;">
     <table id="officer-att-table">
       <tr><th>Student</th><th>Section</th><th>AM in</th><th>AM out</th><th>PM in</th><th>PM out</th><th>Status</th><th></th></tr>
-      ${rows.map(r=>`<tr><td>${r.studentName}</td><td>${r.section}</td><td>${r.amTimeIn?fmtDate(r.amTimeIn):'—'}</td><td>${r.amTimeOut?fmtDate(r.amTimeOut):'—'}</td><td>${r.pmTimeIn?fmtDate(r.pmTimeIn):'—'}</td><td>${r.pmTimeOut?fmtDate(r.pmTimeOut):'—'}</td><td>${attendanceStatusPill(r, ev)}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="8" class="empty">No check-ins yet for this event.</td></tr>`}
+      ${pageRows.map(r=>`<tr><td>${r.studentName}</td><td>${r.section}</td><td>${r.amTimeIn?fmtDate(r.amTimeIn):'—'}</td><td>${r.amTimeOut?fmtDate(r.amTimeOut):'—'}</td><td>${r.pmTimeIn?fmtDate(r.pmTimeIn):'—'}</td><td>${r.pmTimeOut?fmtDate(r.pmTimeOut):'—'}</td><td>${attendanceStatusPill(r, ev)}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="8" class="empty">No check-ins yet for this event.</td></tr>`}
     </table>
   </div>
+  ${paginationControls(page, totalPages, 'attendees')}
   `}`;
 }
 async function removeAttendanceRecord(recordId){
@@ -840,7 +845,7 @@ function renderSsgGenerate(allEvents){
         <div class="auth-tab session-tab ${session==='pm'?'active':''}" data-session="pm" style="${state.officerRotating?'pointer-events:none; opacity:0.6;':''}">PM</div>
       </div>
     </div>
-    ` : `<p class="hint" style="margin-top:-6px; margin-bottom:14px;">This event is ${evSession.toUpperCase()}-only — every code here is for the ${evSession.toUpperCase()} session.</p>`}
+    ` : `<p class="hint" style="margin-top:-6px; margin-bottom:10px;">This event is ${evSession.toUpperCase()}-only — every code here is for the ${evSession.toUpperCase()} session.</p>`}
     <div class="field">
       <label>Which check-in is this?</label>
       <div class="auth-tabs" style="margin-bottom:0;">
@@ -857,7 +862,7 @@ function renderSsgGenerate(allEvents){
   </div>
   ${state.officerRotating && state.officerToken ? `
     <div class="qr-box" style="max-width:320px; margin-top:20px;">
-      <div class="pill ${state.officerPhase==='in'?'green':'gold'}" style="margin-bottom:12px;">${session.toUpperCase()} ${state.officerPhase==='in'?'TIME IN':'TIME OUT'}</div>
+      <div class="pill ${state.officerPhase==='in'?'green':'gold'}" style="margin-bottom:10px;">${session.toUpperCase()} ${state.officerPhase==='in'?'TIME IN':'TIME OUT'}</div>
       <div id="qr-render"></div>
       <div class="code-text">${state.officerToken}</div>
       <div class="pill gold" id="qr-countdown" style="margin-top:12px;">Refreshes in ${remaining}s</div>
@@ -871,10 +876,11 @@ function renderSsgAttendees(allEvents){
   const ev = allEvents.find(e=>e.id===activeId);
   const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id && a.scope==='ssg').sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0)) : [];
   const complete = rows.filter(r=>(r.amTimeIn&&r.amTimeOut)||(r.pmTimeIn&&r.pmTimeOut)).length;
+  const { items: pageRows, totalPages, page } = paginate(rows, state.attendeesPage, ADMIN_PAGE_SIZE);
   return `
   <div class="page-head"><h1>Attendees</h1><p>Live list across every department and section for this event — only check-ins made through the SSG desk, not individual department/section desks.</p></div>
   ${allEvents.length===0 ? `<div class="empty">No events yet.</div>` : `
-  <div class="card" style="max-width:300px; margin-bottom:18px;">
+  <div class="card" style="max-width:300px; margin-bottom:10px;">
     <div class="field" style="margin-bottom:0;">
       <label>Event</label>
       <select id="officer-att-event-select">
@@ -886,16 +892,17 @@ function renderSsgAttendees(allEvents){
     <div class="stat"><div class="num">${rows.length}</div><div class="lbl">Timed in</div></div>
     <div class="stat"><div class="num">${complete}</div><div class="lbl">Completed at least one session</div></div>
   </div>
-  <div style="margin-bottom:18px;">
+  <div style="margin-bottom:10px;">
     <button class="btn-danger" id="reset-event-attendance-btn" ${rows.length===0?'disabled':''}>Reset attendance for this event (${rows.length})</button>
     <p class="hint" style="margin-top:8px;">Clears SSG check-ins across every department for this event — section and department desk records are untouched. Students will need to scan in again from scratch.</p>
   </div>
   <div class="card" style="padding:0;">
     <table id="officer-att-table">
       <tr><th>Student</th><th>Department</th><th>Section</th><th>AM in</th><th>AM out</th><th>PM in</th><th>PM out</th><th>Status</th><th></th></tr>
-      ${rows.map(r=>`<tr><td>${r.studentName}</td><td><span class="badge-dept">${r.department}</span></td><td>${r.section}</td><td>${r.amTimeIn?fmtDate(r.amTimeIn):'—'}</td><td>${r.amTimeOut?fmtDate(r.amTimeOut):'—'}</td><td>${r.pmTimeIn?fmtDate(r.pmTimeIn):'—'}</td><td>${r.pmTimeOut?fmtDate(r.pmTimeOut):'—'}</td><td>${attendanceStatusPill(r, ev)}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="9" class="empty">No check-ins yet for this event.</td></tr>`}
+      ${pageRows.map(r=>`<tr><td>${r.studentName}</td><td><span class="badge-dept">${r.department}</span></td><td>${r.section}</td><td>${r.amTimeIn?fmtDate(r.amTimeIn):'—'}</td><td>${r.amTimeOut?fmtDate(r.amTimeOut):'—'}</td><td>${r.pmTimeIn?fmtDate(r.pmTimeIn):'—'}</td><td>${r.pmTimeOut?fmtDate(r.pmTimeOut):'—'}</td><td>${attendanceStatusPill(r, ev)}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="9" class="empty">No check-ins yet for this event.</td></tr>`}
     </table>
   </div>
+  ${paginationControls(page, totalPages, 'attendees')}
   `}`;
 }
 function attachSsgHandlers(){
@@ -941,7 +948,7 @@ function attachSsgHandlers(){
     render();
   };
   const attSel = document.getElementById('officer-att-event-select');
-  if(attSel) attSel.onchange = ()=>{ state.officerActiveEventId = attSel.value; render(); };
+  if(attSel) attSel.onchange = ()=>{ state.officerActiveEventId = attSel.value; state.attendeesPage = 1; render(); };
   if(state.officerRotating && state.officerToken && lastRenderedQrToken !== state.officerToken){
     setTimeout(()=>{
       const holder = document.getElementById('qr-render');
@@ -975,6 +982,10 @@ function attachSsgHandlers(){
     await saveKey('attendance', DB.attendance);
     render();
   };
+  const attendeesPrevBtn = document.getElementById('attendees-prev-btn');
+  if(attendeesPrevBtn) attendeesPrevBtn.onclick = ()=>{ state.attendeesPage = Math.max(1, (state.attendeesPage||1)-1); render(); };
+  const attendeesNextBtn = document.getElementById('attendees-next-btn');
+  if(attendeesNextBtn) attendeesNextBtn.onclick = ()=>{ state.attendeesPage = (state.attendeesPage||1)+1; render(); };
   if(state.ssgSubRoute==='profile') attachProfileHandlers();
 }
 function attachOfficerHandlers(){
@@ -1021,7 +1032,7 @@ function attachOfficerHandlers(){
     render();
   };
   const attSel = document.getElementById('officer-att-event-select');
-  if(attSel) attSel.onchange = ()=>{ state.officerActiveEventId = attSel.value; render(); };
+  if(attSel) attSel.onchange = ()=>{ state.officerActiveEventId = attSel.value; state.attendeesPage = 1; render(); };
   // only redraw the QR canvas when the token itself has actually changed, to avoid flicker on every countdown tick
   if(state.officerRotating && state.officerToken && lastRenderedQrToken !== state.officerToken){
     setTimeout(()=>{
@@ -1060,6 +1071,10 @@ function attachOfficerHandlers(){
     await saveKey('attendance', DB.attendance);
     render();
   };
+  const attendeesPrevBtn = document.getElementById('attendees-prev-btn');
+  if(attendeesPrevBtn) attendeesPrevBtn.onclick = ()=>{ state.attendeesPage = Math.max(1, (state.attendeesPage||1)-1); render(); };
+  const attendeesNextBtn = document.getElementById('attendees-next-btn');
+  if(attendeesNextBtn) attendeesNextBtn.onclick = ()=>{ state.attendeesPage = (state.attendeesPage||1)+1; render(); };
   if(state.officerSubRoute==='profile') attachProfileHandlers();
 }
 
@@ -1069,28 +1084,28 @@ function renderProfile(){
   const roleLabel = u.role==='admin' ? 'System Admin' : u.role==='officer' ? 'Department officer' : u.role==='ssg' ? 'SSG officer' : 'Student';
   return `
   <div class="page-head"><h1>My Profile</h1><p>${roleLabel} account details.</p></div>
-  <div class="card" style="max-width:440px; margin-bottom:24px;">
+  <div class="card" style="max-width:440px; margin-bottom:16px;">
     <div class="field"><label>Full name</label><input id="prof-name" value="${u.name}"></div>
     ${u.role==='student' ? `
       <div class="field"><label>Student ID</label><input value="${u.id}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
       <div class="field"><label>Department</label><select id="prof-dept">${DB.departments.map(dep=>`<option ${u.department===dep?'selected':''}>${dep}</option>`).join('')}</select></div>
       <div class="field"><label>Section</label><select id="prof-section">${sectionOptions(u.department, u.section)}</select></div>
-      <div class="hint" style="margin-top:-8px; margin-bottom:14px;">Only your own department and section's QR code will check you in.</div>
+      <div class="hint" style="margin-top:-8px; margin-bottom:10px;">Only your own department and section's QR code will check you in.</div>
     ` : ''}
     ${u.role==='officer' ? `
       <div class="field"><label>Username</label><input value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
       <div class="field"><label>Department</label><input value="${u.department}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
       <div class="field"><label>Section</label><input value="${u.section || 'All sections (department officer)'}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
-      <div class="hint" style="margin-top:-8px; margin-bottom:14px;">Department/section reassignment is handled by the system admin, under Manage Officers.</div>
+      <div class="hint" style="margin-top:-8px; margin-bottom:10px;">Department/section reassignment is handled by the system admin, under Manage Officers.</div>
     ` : ''}
     ${u.role==='ssg' ? `
       <div class="field"><label>Username</label><input value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
-      <div class="hint" style="margin-top:-8px; margin-bottom:14px;">SSG accounts can take attendance across every department and section — no department/section assignment applies.</div>
+      <div class="hint" style="margin-top:-8px; margin-bottom:10px;">SSG accounts can take attendance across every department and section — no department/section assignment applies.</div>
     ` : ''}
     ${u.role==='admin' ? `
       <div class="field"><label>Username</label><input value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
     ` : ''}
-    ${state.profileMsg==='saved' ? `<div class="pill green" style="margin-bottom:12px;">Details saved</div>` : ''}
+    ${state.profileMsg==='saved' ? `<div class="pill green" style="margin-bottom:10px;">Details saved</div>` : ''}
     <button class="btn-primary" style="width:100%;" id="save-profile-btn">Save details</button>
   </div>
   <div class="section-title">Change password</div>
@@ -1099,7 +1114,7 @@ function renderProfile(){
     ${pwField('prof-new-pw', 'New password')}
     ${pwField('prof-confirm-pw', 'Confirm new password')}
     ${state.err ? `<div class="err">${state.err}</div>` : ''}
-    ${state.profileMsg==='pw-saved' ? `<div class="pill green" style="margin-bottom:12px;">Password updated</div>` : ''}
+    ${state.profileMsg==='pw-saved' ? `<div class="pill green" style="margin-bottom:10px;">Password updated</div>` : ''}
     <button class="btn-primary" style="width:100%;" id="save-password-btn">Update password</button>
   </div>`;
 }
@@ -1187,7 +1202,7 @@ function renderAdminEvents(){
   const sessionType = d.sessionType || 'full';
   return `
   <div class="page-head"><h1>Manage Events</h1><p>Create the events officers will generate QR codes for.</p></div>
-  <div class="card" style="max-width:520px; margin-bottom:24px;">
+  <div class="card" style="max-width:520px; margin-bottom:16px;">
     <div class="field"><label>Event name</label><input id="ev-name" value="${d.name}" placeholder="Foundation Week 2026"></div>
     <div class="field"><label>Date</label><input id="ev-date" type="date" value="${d.date}"></div>
     <div class="field">
@@ -1224,7 +1239,7 @@ function renderAdminDepartments(){
   const sectionInUse = new Set(Object.values(DB.users).filter(u=>u.role==='student' || u.role==='officer').map(u=>normSection(u.section)));
   return `
   <div class="page-head"><h1>Departments</h1><p>Manage departments and the sections within each one — everything students and officers pick from.</p></div>
-  <div class="card" style="max-width:440px; margin-bottom:24px;">
+  <div class="card" style="max-width:440px; margin-bottom:16px;">
     <div class="field"><label>Add a department</label><input id="new-dept-name" placeholder="e.g. Maritime Department"></div>
     ${state.err ? `<div class="err">${state.err}</div>` : ''}
     <button class="btn-primary" style="width:100%;" id="add-dept-btn">Add department</button>
@@ -1233,12 +1248,12 @@ function renderAdminDepartments(){
   ${deps.length===0 ? `<div class="empty">No departments yet.</div>` : deps.map(dept=>{
     const sections = sectionsFor(dept);
     return `
-    <div class="card" style="max-width:560px; margin-bottom:14px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+    <div class="card" style="max-width:560px; margin-bottom:10px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
         <div style="font-weight:700; font-size:15px;">${dept} ${deptInUse.has(dept)?'<span class="pill gold" style="margin-left:6px;">in use</span>':''}</div>
         <button class="btn-danger" data-del-dept="${dept}">Remove department</button>
       </div>
-      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
+      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
         ${sections.length ? sections.map(s=>`
           <span class="section-chip">${s} ${sectionInUse.has(normSection(s))?'<span class="pill gold" style="margin-left:4px;">in use</span>':''}
             <button class="chip-x" data-del-section-dept="${dept}" data-del-section-name="${s}" aria-label="Remove section">&times;</button>
@@ -1254,14 +1269,17 @@ function renderAdminDepartments(){
 function renderAdminStudents(){
   const allStudents = Object.values(DB.users).filter(u=>u.role==='student').sort((a,b)=>a.name.localeCompare(b.name));
   const deptFilter = state.studentDeptFilter || 'all';
-  const students = deptFilter==='all' ? allStudents : allStudents.filter(s=>s.department===deptFilter);
+  let students = deptFilter==='all' ? allStudents : allStudents.filter(s=>s.department===deptFilter);
+  const q = (state.studentSearchQuery||'').trim().toLowerCase();
+  if(q) students = students.filter(s=>(s.name+' '+s.id).toLowerCase().includes(q));
   const editing = state.editingStudentId;
   const editingUser = editing ? DB.users[editing] : null;
   const reset = state.lastResetPassword;
+  const { items: pageStudents, totalPages, page } = paginate(students, state.studentPage, ADMIN_PAGE_SIZE);
   return `
   <div class="page-head"><h1>Manage Students</h1><p>Update account details or reset a student's password.</p></div>
   ${reset ? `
-    <div class="card" style="max-width:480px; margin-bottom:20px; border-color:var(--accent);">
+    <div class="card" style="max-width:480px; margin-bottom:10px; border-color:var(--accent);">
       <div class="pill gold" style="margin-bottom:10px;">Password reset</div>
       <p style="font-size:13.5px; margin:0 0 10px 0;">New temporary password for <strong>${reset.name}</strong> (<span class="mono">${reset.studentId}</span>):</p>
       <div style="display:flex; align-items:center; gap:10px;">
@@ -1273,8 +1291,8 @@ function renderAdminStudents(){
     </div>
   ` : ''}
   ${editingUser ? `
-  <div class="card" style="max-width:480px; margin-bottom:24px;">
-    <div class="pill gold" style="margin-bottom:14px;">Editing ${editingUser.id}</div>
+  <div class="card" style="max-width:480px; margin-bottom:16px;">
+    <div class="pill gold" style="margin-bottom:10px;">Editing ${editingUser.id}</div>
     <div class="field"><label>Full name</label><input id="stu-edit-name" value="${editingUser.name}"></div>
     <div class="field"><label>Department</label><select id="stu-edit-dept">${DB.departments.map(dep=>`<option ${editingUser.department===dep?'selected':''}>${dep}</option>`).join('')}</select></div>
     <div class="field"><label>Section</label><select id="stu-edit-section">${sectionOptions(editingUser.department, editingUser.section)}</select></div>
@@ -1293,16 +1311,18 @@ function renderAdminStudents(){
     </div>
     <div class="field student-search-field">
       <label>Search ${deptFilter==='all'?'all departments':'in ' + deptFilter}</label>
-      <input id="student-search" placeholder="Name or student ID">
+      <input id="student-search" value="${state.studentSearchQuery||''}" placeholder="Name or student ID">
     </div>
   </div>
   <div class="section-title">${deptFilter==='all' ? 'All students' : deptFilter} <span class="pill gold">${students.length}</span></div>
   <div class="card" style="padding:0;">
     <table id="student-table">
       <tr><th>Name</th><th>ID</th><th>Department</th><th>Section</th><th></th></tr>
-      ${students.map(s=>`<tr data-student-row="${s.id}" data-student-search="${(s.name+' '+s.id).toLowerCase()}"><td>${s.name}</td><td class="mono">${s.id}</td><td><span class="badge-dept">${s.department}</span></td><td>${s.section||'—'}</td><td><button class="btn-ghost" data-edit-student="${s.id}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-reset-student="${s.id}">Reset password</button></td></tr>`).join('') || `<tr><td colspan="5" class="empty">No students in ${deptFilter==='all'?'the system':'this department'} yet.</td></tr>`}
+      ${pageStudents.map(s=>`<tr><td>${s.name}</td><td class="mono">${s.id}</td><td><span class="badge-dept">${s.department}</span></td><td>${s.section||'—'}</td><td><button class="btn-ghost" data-edit-student="${s.id}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-reset-student="${s.id}">Reset password</button></td></tr>`).join('') || `<tr><td colspan="5" class="empty">No students in ${deptFilter==='all'?'the system':'this department'} yet.</td></tr>`}
     </table>
-  </div>`;
+  </div>
+  ${paginationControls(page, totalPages, 'student')}
+  `;
 }
 function renderOfficerModal(){
   const d = state.newOfficerDraft;
@@ -1312,7 +1332,7 @@ function renderOfficerModal(){
   <div class="modal-overlay" id="officer-modal-overlay">
     <div class="modal-card">
       <button class="close-x" id="close-officer-modal-btn">&times;</button>
-      ${editing ? `<div class="pill gold" style="margin-bottom:14px;">Editing ${editing}</div>` : `<h3 style="margin-top:0;">Add officer account</h3>`}
+      ${editing ? `<div class="pill gold" style="margin-bottom:10px;">Editing ${editing}</div>` : `<h3 style="margin-top:0;">Add officer account</h3>`}
       <div class="field">
         <label>Officer type</label>
         <div class="auth-tabs" style="margin-bottom:0;">
@@ -1407,7 +1427,7 @@ function renderStudentAttendanceModal(){
       ${rows.length===0 ? `<div class="empty">No records match the current filters for this student.</div>` : rows.map(r=>{
         const ev = DB.events.find(e=>e.id===r.eventId);
         return `
-        <div class="card" style="margin-bottom:12px; padding:16px;">
+        <div class="card" style="margin-bottom:10px; padding:16px;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:10px;">
             <div>
               <strong style="font-size:14px;">${r.eventName}</strong><br>
@@ -1446,7 +1466,7 @@ function renderAdminRecords(){
   const { items: pageStudents, totalPages, page } = paginate(studentRows, state.recordsPage, ADMIN_PAGE_SIZE);
   return `
   <div class="page-head"><h1>All Records</h1><p>Full attendance log across every event, department, and desk (section, department, or SSG).</p></div>
-  <div class="card" style="max-width:760px; margin-bottom:18px;">
+  <div class="card" style="max-width:760px; margin-bottom:10px;">
     <div class="row">
       <div class="field" style="margin-bottom:0; flex:1;">
         <label>Event</label>
@@ -1462,7 +1482,7 @@ function renderAdminRecords(){
       </div>
     </div>
   </div>
-  <div style="margin-bottom:18px;">
+  <div style="margin-bottom:10px;">
     ${canBulkReset ? `
       <button class="btn-danger" id="bulk-reset-records-btn" ${rows.length===0?'disabled':''}>Reset all ${rows.length} record${rows.length===1?'':'s'} shown below</button>
       <p class="hint" style="margin-top:8px;">Clears attendance for <strong>${state.adminFilterEvent}</strong>${state.adminFilterDept!=='all'?` in ${state.adminFilterDept}`:' across every department'}${scopeFilter!=='all'?` (${scopeLabel(scopeFilter)} desk only)`:''} — students will need to scan in again from scratch.</p>
@@ -1697,18 +1717,21 @@ function attachAdminHandlers(){
   });
   const studentSearchEl = document.getElementById('student-search');
   if(studentSearchEl) studentSearchEl.oninput = ()=>{
-    // filter rows directly in the DOM rather than re-rendering, so typing doesn't lose focus
-    const q = studentSearchEl.value.trim().toLowerCase();
-    document.querySelectorAll('#student-table tr[data-student-row]').forEach(tr=>{
-      tr.style.display = tr.dataset.studentSearch.includes(q) ? '' : 'none';
-    });
+    state.studentSearchQuery = studentSearchEl.value;
+    state.studentPage = 1;
+    reRenderPreservingFocus();
   };
   document.querySelectorAll('.dept-chip:not(.officer-type-filter-btn)').forEach(el=>{
     el.onclick = ()=>{
       state.studentDeptFilter = el.dataset.dept;
+      state.studentPage = 1;
       render();
     };
   });
+  const studentPrevBtn = document.getElementById('student-prev-btn');
+  if(studentPrevBtn) studentPrevBtn.onclick = ()=>{ state.studentPage = Math.max(1, (state.studentPage||1)-1); render(); };
+  const studentNextBtn = document.getElementById('student-next-btn');
+  if(studentNextBtn) studentNextBtn.onclick = ()=>{ state.studentPage = (state.studentPage||1)+1; render(); };
   document.querySelectorAll('[data-edit-student]').forEach(el=>{
     el.onclick = ()=>{
       state.editingStudentId = el.dataset.editStudent;
