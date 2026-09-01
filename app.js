@@ -203,6 +203,7 @@ let state = {
   newOfficerDraft:{name:'', username:'', password:'', department:DEFAULT_DEPTS[0], section:'', type:'section'},
   adminFilterEvent:'all',
   logPage:1,
+  analyticsPage:1,
   adminFilterDept:'all',
   adminFilterScope:'all',
   profileMsg:'',
@@ -439,7 +440,7 @@ function renderShell(innerHtml){
   const items = role==='student' ? [['checkin','Check In'],['history','My Attendance'],['profile','My Profile']]
               : role==='officer' ? [['generate','Generate QR'],['attendees','Attendees'],['profile','My Profile']]
               : role==='ssg' ? [['generate','Generate QR'],['attendees','Attendees'],['profile','My Profile']]
-              : [['overview','Overview'],['events','Manage Events'],['departments','Departments'],['students','Manage Students'],['officers','Manage Officers'],['records','All Records'],['log','Activity Log'],['profile','My Profile']];
+              : [['overview','Overview'],['analytics','Analytics'],['events','Manage Events'],['departments','Departments'],['students','Manage Students'],['officers','Manage Officers'],['records','All Records'],['log','Activity Log'],['profile','My Profile']];
   const sub = role==='student' ? state.studentSubRoute : role==='officer' ? state.officerSubRoute : role==='ssg' ? state.ssgSubRoute : state.adminSubRoute;
   const roleLabel = role==='admin'?'System Admin':role==='officer'?(u.section?'Section Officer':'Department Officer'):role==='ssg'?'SSG Officer':'Student';
   return `
@@ -491,7 +492,7 @@ function attachShellHandlers(){
       DB.sections = await fetchKey('sections', DB.sections);
       // views that show shared records should always reflect what's actually in the database right now,
       // not just whatever happened to be loaded when this tab was first opened
-      if((role==='student' && sub==='history') || ((role==='officer'||role==='ssg') && sub==='attendees') || (role==='admin' && (sub==='overview' || sub==='records'))){
+      if((role==='student' && sub==='history') || ((role==='officer'||role==='ssg') && sub==='attendees') || (role==='admin' && (sub==='overview' || sub==='records' || sub==='analytics'))){
         DB.attendance = await fetchKey('attendance', DB.attendance);
       }
       if(role==='admin' && sub==='officers'){
@@ -500,6 +501,9 @@ function attachShellHandlers(){
       if(role==='admin' && sub==='log'){
         DB.adminLog = await fetchKey('adminLog', DB.adminLog || []);
         state.logPage = 1;
+      }
+      if(role==='admin' && sub==='analytics'){
+        state.analyticsPage = 1;
       }
       render();
     };
@@ -1256,6 +1260,7 @@ function attachProfileHandlers(){
 /* ---------------- ADMIN ---------------- */
 function renderAdmin(){
   if(state.adminSubRoute==='overview') return renderAdminOverview();
+  if(state.adminSubRoute==='analytics') return renderAdminAnalytics();
   if(state.adminSubRoute==='events') return renderAdminEvents();
   if(state.adminSubRoute==='departments') return renderAdminDepartments();
   if(state.adminSubRoute==='students') return renderAdminStudents();
@@ -1294,6 +1299,89 @@ function renderAdminOverview(){
       }).join('') : `<tr><td colspan="3" class="empty">No attendance recorded yet.</td></tr>`}
     </table>
   </div>`;
+}
+function renderAdminAnalytics(){
+  const records = DB.attendance;
+  const totalRecords = records.length;
+  const isComplete = a => (a.amTimeIn&&a.amTimeOut)||(a.pmTimeIn&&a.pmTimeOut);
+  const totalComplete = records.filter(isComplete).length;
+  const overallRate = totalRecords ? Math.round((totalComplete/totalRecords)*100) : 0;
+  const distinctStudents = new Set(records.map(r=>r.studentId)).size;
+
+  const byDept = {};
+  records.forEach(r=>{
+    if(!byDept[r.department]) byDept[r.department] = {total:0, complete:0};
+    byDept[r.department].total++;
+    if(isComplete(r)) byDept[r.department].complete++;
+  });
+  const deptRows = Object.entries(byDept)
+    .map(([dept,c])=>({dept, total:c.total, complete:c.complete, rate: c.total ? Math.round((c.complete/c.total)*100) : 0}))
+    .sort((a,b)=>b.total-a.total);
+
+  const byScope = {section:0, department:0, ssg:0};
+  records.forEach(r=>{ byScope[r.scope] = (byScope[r.scope]||0) + 1; });
+
+  const byEvent = {};
+  records.forEach(a=>{
+    if(!byEvent[a.eventId]) byEvent[a.eventId] = {total:0, complete:0};
+    byEvent[a.eventId].total++;
+    if(isComplete(a)) byEvent[a.eventId].complete++;
+  });
+  const eventRows = Object.entries(byEvent).map(([id,c])=>{
+    const ev = DB.events.find(e=>e.id===id);
+    const name = ev ? ev.name : (records.find(a=>a.eventId===id)||{}).eventName || 'Deleted event';
+    const date = ev ? ev.date : '';
+    return { id, name, date, total:c.total, complete:c.complete, rate: c.total ? Math.round((c.complete/c.total)*100) : 0 };
+  }).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+
+  const { items: pageEvents, totalPages, page } = paginate(eventRows, state.analyticsPage, ADMIN_PAGE_SIZE);
+  const rateClass = r => r>=75 ? 'green' : r>=40 ? 'gold' : 'danger';
+
+  return `
+  <div class="page-head"><h1>Analytics</h1><p>Deeper breakdown of attendance completion across departments, desks, and events.</p></div>
+  <div class="grid">
+    <div class="stat"><div class="num">${totalRecords}</div><div class="lbl">Total check-in records</div></div>
+    <div class="stat"><div class="num">${overallRate}%</div><div class="lbl">Overall completion rate</div></div>
+    <div class="stat"><div class="num">${distinctStudents}</div><div class="lbl">Distinct students engaged</div></div>
+    <div class="stat"><div class="num">${DB.events.length}</div><div class="lbl">Events this year</div></div>
+  </div>
+  <div class="analytics-grid" style="margin-bottom:16px;">
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">Completion rate by department</div>
+      ${deptRows.length ? deptRows.map(d=>{
+        const barColor = d.rate>=75 ? 'var(--success)' : d.rate>=40 ? 'var(--accent)' : 'var(--danger)';
+        return `
+        <div class="bar-row">
+          <div class="bar-label">${d.dept}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${d.rate}%; background:${barColor};"></div></div>
+          <div class="bar-value">${d.rate}% (${d.total})</div>
+        </div>`;
+      }).join('') : `<div class="empty">No attendance recorded yet.</div>`}
+    </div>
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">Check-ins by desk type</div>
+      ${['section','department','ssg'].map(sc=>{
+        const count = byScope[sc]||0;
+        const pct = totalRecords ? Math.round((count/totalRecords)*100) : 0;
+        const cls = sc==='department' ? 'navy' : sc==='ssg' ? '' : 'green';
+        return `
+        <div class="bar-row">
+          <div class="bar-label">${scopeLabel(sc)}</div>
+          <div class="bar-track"><div class="bar-fill ${cls}" style="width:${pct}%"></div></div>
+          <div class="bar-value">${pct}% (${count})</div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>
+  <div class="section-title">Completion rate by event</div>
+  <div class="card" style="padding:0;">
+    <table>
+      <tr><th>Event</th><th>Date</th><th>Timed in</th><th>Completed</th><th>Rate</th></tr>
+      ${pageEvents.map(e=>`<tr><td>${e.name}</td><td>${e.date||'—'}</td><td>${e.total}</td><td>${e.complete}</td><td><span class="pill ${rateClass(e.rate)}">${e.rate}%</span></td></tr>`).join('') || `<tr><td colspan="5" class="empty">No attendance recorded yet.</td></tr>`}
+    </table>
+  </div>
+  ${paginationControls(page, totalPages, 'analytics')}
+  `;
 }
 function renderEventModal(){
   const d = state.newEventDraft;
@@ -2068,6 +2156,10 @@ function attachAdminHandlers(){
   if(logPrevBtn) logPrevBtn.onclick = ()=>{ state.logPage = Math.max(1, (state.logPage||1)-1); render(); };
   const logNextBtn = document.getElementById('log-next-btn');
   if(logNextBtn) logNextBtn.onclick = ()=>{ state.logPage = (state.logPage||1)+1; render(); };
+  const analyticsPrevBtn = document.getElementById('analytics-prev-btn');
+  if(analyticsPrevBtn) analyticsPrevBtn.onclick = ()=>{ state.analyticsPage = Math.max(1, (state.analyticsPage||1)-1); render(); };
+  const analyticsNextBtn = document.getElementById('analytics-next-btn');
+  if(analyticsNextBtn) analyticsNextBtn.onclick = ()=>{ state.analyticsPage = (state.analyticsPage||1)+1; render(); };
   if(state.adminSubRoute==='profile') attachProfileHandlers();
   wirePasswordToggles();
 }
