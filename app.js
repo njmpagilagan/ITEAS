@@ -181,7 +181,7 @@ let state = {
   officerRotating:false,
   officerPhase:'in',       // 'in' (time-in) or 'out' (time-out)
   officerSession:'am',     // 'am' or 'pm' (only relevant for whole-day events)
-  newEventDraft:{name:'', date:'', departments:[...DEFAULT_DEPTS], sessionType:'full'},
+  newEventDraft:{name:'', date:'', departments:[...DEFAULT_DEPTS], sessionType:'full', sections:[]},
   newOfficerDraft:{name:'', username:'', password:'', department:DEFAULT_DEPTS[0], section:'', type:'section'},
   adminFilterEvent:'all',
   adminFilterDept:'all',
@@ -714,7 +714,14 @@ async function officerTick(eventId, department, section, phase, scope, session){
 }
 function renderOfficer(){
   const u = state.currentUser;
-  const myEvents = DB.events.filter(e=>e.departments.includes(u.department));
+  const myEvents = DB.events.filter(e=>{
+    if(!e.departments.includes(u.department)) return false;
+    // section officers only see events open to every section, or ones that specifically include their own
+    if(u.section && e.sections && e.sections.length>0){
+      return e.sections.some(s=>normSection(s)===normSection(u.section));
+    }
+    return true;
+  });
   if(state.officerSubRoute==='generate') return renderOfficerGenerate(myEvents);
   if(state.officerSubRoute==='attendees') return renderOfficerAttendees(myEvents);
   return renderProfile();
@@ -1221,14 +1228,29 @@ function renderAdminEvents(){
           <input type="checkbox" style="width:auto;" class="dept-check" value="${dep}" ${d.departments.includes(dep)?'checked':''}> ${dep}
         </label>`).join('')}
     </div>
+    <div class="field">
+      <label>Restrict to specific sections (optional)</label>
+      <p class="hint" style="margin-top:-4px;">Leave everything unchecked to open this event to every section in the departments above. Check specific sections to limit it — only officers of those sections will see this event.</p>
+      ${d.departments.length===0 ? `<p class="hint">Pick a department above first.</p>` : d.departments.map(dep=>{
+        const secs = sectionsFor(dep);
+        if(secs.length===0) return '';
+        return `<div style="margin-bottom:8px;">
+          <div style="font-size:11.5px; font-weight:700; color:var(--ink-soft); margin-bottom:4px;">${dep}</div>
+          ${secs.map(sec=>`
+            <label style="text-transform:none; font-weight:400; display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+              <input type="checkbox" style="width:auto;" class="ev-section-check" value="${sec}" ${d.sections.includes(sec)?'checked':''}> ${sec}
+            </label>`).join('')}
+        </div>`;
+      }).join('')}
+    </div>
     ${state.err ? `<div class="err">${state.err}</div>` : ''}
     <button class="btn-primary" style="width:100%;" id="create-event-btn">Create event</button>
   </div>
   <div class="section-title">All events</div>
   <div class="card" style="padding:0;">
     <table>
-      <tr><th>Event</th><th>Date</th><th>Duration</th><th>Departments</th><th></th></tr>
-      ${DB.events.map(e=>`<tr><td>${e.name}</td><td>${e.date||'—'}</td><td>${e.sessionType==='am'?'AM only':e.sessionType==='pm'?'PM only':'Whole day'}</td><td>${e.departments.map(dp=>`<span class="badge-dept" style="margin-right:4px;">${dp}</span>`).join('')}</td><td><button class="btn-danger" data-del-event="${e.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="5" class="empty">No events yet.</td></tr>`}
+      <tr><th>Event</th><th>Date</th><th>Duration</th><th>Departments</th><th>Sections</th><th></th></tr>
+      ${DB.events.map(e=>`<tr><td>${e.name}</td><td>${e.date||'—'}</td><td>${e.sessionType==='am'?'AM only':e.sessionType==='pm'?'PM only':'Whole day'}</td><td>${e.departments.map(dp=>`<span class="badge-dept" style="margin-right:4px;">${dp}</span>`).join('')}</td><td>${e.sections && e.sections.length ? e.sections.map(s=>`<span class="pill gold" style="margin-right:4px;">${s}</span>`).join('') : '<span class="pill green">All sections</span>'}</td><td><button class="btn-danger" data-del-event="${e.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="6" class="empty">No events yet.</td></tr>`}
     </table>
   </div>`;
 }
@@ -1507,6 +1529,18 @@ function attachAdminHandlers(){
       const set = new Set(state.newEventDraft.departments);
       if(el.checked) set.add(el.value); else set.delete(el.value);
       state.newEventDraft.departments = [...set];
+      // drop any checked sections that no longer belong to a still-checked department
+      const allowedSections = new Set();
+      state.newEventDraft.departments.forEach(dep=>{ sectionsFor(dep).forEach(s=>allowedSections.add(s)); });
+      state.newEventDraft.sections = state.newEventDraft.sections.filter(s=>allowedSections.has(s));
+      render();
+    };
+  });
+  document.querySelectorAll('.ev-section-check').forEach(el=>{
+    el.onchange = ()=>{
+      const set = new Set(state.newEventDraft.sections);
+      if(el.checked) set.add(el.value); else set.delete(el.value);
+      state.newEventDraft.sections = [...set];
     };
   });
   const nameEl = document.getElementById('ev-name');
@@ -1523,9 +1557,9 @@ function attachAdminHandlers(){
   if(createEv) createEv.onclick = async ()=>{
     const d = state.newEventDraft;
     if(!d.name || d.departments.length===0){ state.err='Give the event a name and at least one department.'; render(); return; }
-    DB.events.push({id: uid('evt'), name:d.name, date:d.date, departments:[...d.departments], sessionType: d.sessionType || 'full'});
+    DB.events.push({id: uid('evt'), name:d.name, date:d.date, departments:[...d.departments], sessionType: d.sessionType || 'full', sections:[...d.sections]});
     await saveKey('events', DB.events);
-    state.newEventDraft = {name:'', date:'', departments:[...DB.departments], sessionType:'full'};
+    state.newEventDraft = {name:'', date:'', departments:[...DB.departments], sessionType:'full', sections:[]};
     state.err='';
     render();
   };
