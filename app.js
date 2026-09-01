@@ -530,7 +530,8 @@ function renderHistory(){
       <tr><th>Event</th><th>Via</th><th>Department</th><th>AM in</th><th>AM out</th><th>PM in</th><th>PM out</th><th>Status</th></tr>
       ${mine.map(a=>{
         const ev = DB.events.find(e=>e.id===a.eventId);
-        return `<tr><td>${a.eventName}</td><td>${scopePill(a.scope)}</td><td><span class="badge-dept">${a.department}</span></td><td>${a.amTimeIn?fmtDate(a.amTimeIn):'—'}</td><td>${a.amTimeOut?fmtDate(a.amTimeOut):'—'}</td><td>${a.pmTimeIn?fmtDate(a.pmTimeIn):'—'}</td><td>${a.pmTimeOut?fmtDate(a.pmTimeOut):'—'}</td><td>${attendanceStatusPill(a, ev)}</td></tr>`;
+        const eventName = ev ? ev.name : a.eventName; // fall back to the stored snapshot only if the event itself was deleted
+        return `<tr><td>${eventName}</td><td>${scopePill(a.scope)}</td><td><span class="badge-dept">${a.department}</span></td><td>${a.amTimeIn?fmtDate(a.amTimeIn):'—'}</td><td>${a.amTimeOut?fmtDate(a.amTimeOut):'—'}</td><td>${a.pmTimeIn?fmtDate(a.pmTimeIn):'—'}</td><td>${a.pmTimeOut?fmtDate(a.pmTimeOut):'—'}</td><td>${attendanceStatusPill(a, ev)}</td></tr>`;
       }).join('')}
     </table>
   </div>`;
@@ -1249,9 +1250,9 @@ function renderAdminOverview(){
   const officerCount = Object.values(DB.users).filter(u=>u.role==='officer' || u.role==='ssg').length;
   const byEvent = {};
   DB.attendance.forEach(a=>{
-    if(!byEvent[a.eventName]) byEvent[a.eventName] = {timedIn:0, complete:0};
-    if(a.amTimeIn || a.pmTimeIn) byEvent[a.eventName].timedIn++;
-    if((a.amTimeIn&&a.amTimeOut)||(a.pmTimeIn&&a.pmTimeOut)) byEvent[a.eventName].complete++;
+    if(!byEvent[a.eventId]) byEvent[a.eventId] = {timedIn:0, complete:0};
+    if(a.amTimeIn || a.pmTimeIn) byEvent[a.eventId].timedIn++;
+    if((a.amTimeIn&&a.amTimeOut)||(a.pmTimeIn&&a.pmTimeOut)) byEvent[a.eventId].complete++;
   });
   return `
   <div class="page-head"><h1>Admin Overview</h1><p>School-wide attendance summary, live across every department.</p></div>
@@ -1265,7 +1266,11 @@ function renderAdminOverview(){
   <div class="card" style="padding:0;">
     <table>
       <tr><th>Event</th><th>Timed in</th><th>Completed</th></tr>
-      ${Object.keys(byEvent).length ? Object.entries(byEvent).map(([name,c])=>`<tr><td>${name}</td><td>${c.timedIn}</td><td>${c.complete}</td></tr>`).join('') : `<tr><td colspan="3" class="empty">No attendance recorded yet.</td></tr>`}
+      ${Object.keys(byEvent).length ? Object.entries(byEvent).map(([id,c])=>{
+        const ev = DB.events.find(e=>e.id===id);
+        const name = ev ? ev.name : (DB.attendance.find(a=>a.eventId===id)||{}).eventName || 'Deleted event';
+        return `<tr><td>${name}</td><td>${c.timedIn}</td><td>${c.complete}</td></tr>`;
+      }).join('') : `<tr><td colspan="3" class="empty">No attendance recorded yet.</td></tr>`}
     </table>
   </div>`;
 }
@@ -1525,27 +1530,29 @@ function renderStudentAttendanceModal(){
   if(!sid) return '';
   const scopeFilter = state.adminFilterScope || 'all';
   let rows = DB.attendance.filter(a=>a.studentId===sid);
-  if(state.adminFilterEvent!=='all') rows = rows.filter(r=>r.eventName===state.adminFilterEvent);
+  if(state.adminFilterEvent!=='all') rows = rows.filter(r=>r.eventId===state.adminFilterEvent);
   if(state.adminFilterDept!=='all') rows = rows.filter(r=>r.department===state.adminFilterDept);
   if(scopeFilter!=='all') rows = rows.filter(r=>r.scope===scopeFilter);
   rows = rows.sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0));
   const sample = DB.attendance.find(a=>a.studentId===sid);
   const name = sample ? sample.studentName : sid;
+  const filterEventLabel = state.adminFilterEvent==='all' ? 'all events' : ((DB.events.find(e=>e.id===state.adminFilterEvent)||{}).name || 'this event');
   return `
   <div class="modal-overlay" id="student-attendance-modal-overlay">
     <div class="modal-card">
       <button class="close-x" id="close-student-attendance-modal-btn">&times;</button>
       <h3 style="margin-top:0; margin-bottom:2px;">${name}</h3>
       <p class="hint" style="margin-top:0;">
-        <span class="mono">${sid}</span> — ${state.adminFilterEvent==='all' ? 'all events' : state.adminFilterEvent}${state.adminFilterDept!=='all' ? `, ${state.adminFilterDept}` : ''}${scopeFilter!=='all' ? `, ${scopeLabel(scopeFilter)} desk` : ''} — ${rows.length} record${rows.length===1?'':'s'}
+        <span class="mono">${sid}</span> — ${filterEventLabel}${state.adminFilterDept!=='all' ? `, ${state.adminFilterDept}` : ''}${scopeFilter!=='all' ? `, ${scopeLabel(scopeFilter)} desk` : ''} — ${rows.length} record${rows.length===1?'':'s'}
       </p>
       ${rows.length===0 ? `<div class="empty">No records match the current filters for this student.</div>` : rows.map(r=>{
         const ev = DB.events.find(e=>e.id===r.eventId);
+        const eventName = ev ? ev.name : r.eventName; // fall back to the stored snapshot only if the event itself was deleted
         return `
         <div class="card" style="margin-bottom:10px; padding:16px;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:10px;">
             <div>
-              <strong style="font-size:14px;">${r.eventName}</strong><br>
+              <strong style="font-size:14px;">${eventName}</strong><br>
               <span style="margin-top:4px; display:inline-block;">${scopePill(r.scope)}</span>
             </div>
             ${attendanceStatusPill(r, ev)}
@@ -1561,15 +1568,16 @@ function renderStudentAttendanceModal(){
   </div>`;
 }
 function renderAdminRecords(){
-  const events = ['all', ...DB.events.map(e=>e.name)];
+  const events = [{id:'all', name:'all'}, ...DB.events.map(e=>({id:e.id, name:e.name}))];
   const depts = ['all', ...DB.departments];
   const scopes = ['all', 'section', 'department', 'ssg'];
   const scopeFilter = state.adminFilterScope || 'all';
   let rows = DB.attendance.slice();
-  if(state.adminFilterEvent!=='all') rows = rows.filter(r=>r.eventName===state.adminFilterEvent);
+  if(state.adminFilterEvent!=='all') rows = rows.filter(r=>r.eventId===state.adminFilterEvent);
   if(state.adminFilterDept!=='all') rows = rows.filter(r=>r.department===state.adminFilterDept);
   if(scopeFilter!=='all') rows = rows.filter(r=>r.scope===scopeFilter);
   const canBulkReset = state.adminFilterEvent !== 'all';
+  const filterEventName = state.adminFilterEvent==='all' ? 'all' : ((DB.events.find(e=>e.id===state.adminFilterEvent)||{}).name || 'this event');
   // group the filtered records by student — the row-level detail lives in the modal
   const byStudent = {};
   rows.forEach(r=>{
@@ -1585,7 +1593,7 @@ function renderAdminRecords(){
     <div class="row">
       <div class="field" style="margin-bottom:0; flex:1;">
         <label>Event</label>
-        <select id="filter-event">${events.map(e=>`<option ${state.adminFilterEvent===e?'selected':''}>${e}</option>`).join('')}</select>
+        <select id="filter-event">${events.map(e=>`<option value="${e.id}" ${state.adminFilterEvent===e.id?'selected':''}>${e.name}</option>`).join('')}</select>
       </div>
       <div class="field" style="margin-bottom:0; flex:1;">
         <label>Department</label>
@@ -1600,7 +1608,7 @@ function renderAdminRecords(){
   <div style="margin-bottom:10px;">
     ${canBulkReset ? `
       <button class="btn-danger" id="bulk-reset-records-btn" ${rows.length===0?'disabled':''}>Reset all ${rows.length} record${rows.length===1?'':'s'} shown below</button>
-      <p class="hint" style="margin-top:8px;">Clears attendance for <strong>${state.adminFilterEvent}</strong>${state.adminFilterDept!=='all'?` in ${state.adminFilterDept}`:' across every department'}${scopeFilter!=='all'?` (${scopeLabel(scopeFilter)} desk only)`:''} — students will need to scan in again from scratch.</p>
+      <p class="hint" style="margin-top:8px;">Clears attendance for <strong>${filterEventName}</strong>${state.adminFilterDept!=='all'?` in ${state.adminFilterDept}`:' across every department'}${scopeFilter!=='all'?` (${scopeLabel(scopeFilter)} desk only)`:''} — students will need to scan in again from scratch.</p>
     ` : `
       <p class="hint">Select a specific event above to reset all of its attendance at once.</p>
     `}
@@ -1989,13 +1997,14 @@ function attachAdminHandlers(){
   });
   const bulkResetBtn = document.getElementById('bulk-reset-records-btn');
   if(bulkResetBtn) bulkResetBtn.onclick = async ()=>{
-    const eventName = state.adminFilterEvent;
+    const eventId = state.adminFilterEvent;
     const dept = state.adminFilterDept;
+    const eventName = (DB.events.find(e=>e.id===eventId)||{}).name || 'this event';
     DB.attendance = await fetchKey('attendance', DB.attendance);
-    const toRemove = DB.attendance.filter(a => a.eventName===eventName && (dept==='all' || a.department===dept));
+    const toRemove = DB.attendance.filter(a => a.eventId===eventId && (dept==='all' || a.department===dept));
     if(toRemove.length===0){ render(); return; }
     if(!confirm(`Reset attendance for ${eventName}${dept!=='all'?` (${dept})`:''}? This permanently removes ${toRemove.length} record${toRemove.length===1?'':'s'} — students will need to scan in again from scratch.`)) return;
-    DB.attendance = DB.attendance.filter(a => !(a.eventName===eventName && (dept==='all' || a.department===dept)));
+    DB.attendance = DB.attendance.filter(a => !(a.eventId===eventId && (dept==='all' || a.department===dept)));
     await saveKey('attendance', DB.attendance);
     render();
   };
