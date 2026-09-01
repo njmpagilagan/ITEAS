@@ -158,6 +158,9 @@ let state = {
   studentSearch:'',
   studentDeptFilter:'all',
   officerTypeFilter:'all',
+  officerModalOpen:false,
+  officerPage:1,
+  officerSearchQuery:'',
   lastResetPassword:null
 };
 
