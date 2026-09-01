@@ -183,6 +183,7 @@ let state = {
   officerPage:1,
   officerSearchQuery:'',
   recordsShown:false,
+  showAttendanceStudentId:null,
   recordsPage:1,
   lastResetPassword:null
 };
@@ -411,7 +412,7 @@ function attachShellHandlers(){
         state.ssgSubRoute = sub;
       }
       if(role==='admin'){ state.adminSubRoute = sub; }
-      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null; state.recordsShown=false;
+      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null; state.recordsShown=false; state.showAttendanceStudentId=null;
       // an account's own department/section may have been changed by admin since login —
       // always refresh it so a stale, already-logged-in session doesn't keep enforcing old rules
       if(role==='officer' || role==='ssg' || role==='student'){
@@ -1371,18 +1372,65 @@ function renderAdminOfficers(){
   ${modalOpen ? renderOfficerModal() : ''}
   `;
 }
+function renderStudentAttendanceModal(){
+  const sid = state.showAttendanceStudentId;
+  if(!sid) return '';
+  const scopeFilter = state.adminFilterScope || 'all';
+  let rows = DB.attendance.filter(a=>a.studentId===sid);
+  if(state.adminFilterEvent!=='all') rows = rows.filter(r=>r.eventName===state.adminFilterEvent);
+  if(state.adminFilterDept!=='all') rows = rows.filter(r=>r.department===state.adminFilterDept);
+  if(scopeFilter!=='all') rows = rows.filter(r=>r.scope===scopeFilter);
+  rows = rows.sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0));
+  const sample = DB.attendance.find(a=>a.studentId===sid);
+  const name = sample ? sample.studentName : sid;
+  return `
+  <div class="modal-overlay" id="student-attendance-modal-overlay">
+    <div class="modal-card">
+      <button class="close-x" id="close-student-attendance-modal-btn">&times;</button>
+      <h3 style="margin-top:0; margin-bottom:2px;">${name}</h3>
+      <p class="hint" style="margin-top:0;">
+        <span class="mono">${sid}</span> — ${state.adminFilterEvent==='all' ? 'all events' : state.adminFilterEvent}${state.adminFilterDept!=='all' ? `, ${state.adminFilterDept}` : ''}${scopeFilter!=='all' ? `, ${scopeLabel(scopeFilter)} desk` : ''} — ${rows.length} record${rows.length===1?'':'s'}
+      </p>
+      ${rows.length===0 ? `<div class="empty">No records match the current filters for this student.</div>` : rows.map(r=>{
+        const ev = DB.events.find(e=>e.id===r.eventId);
+        return `
+        <div class="card" style="margin-bottom:12px; padding:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:10px;">
+            <div>
+              <strong style="font-size:14px;">${r.eventName}</strong><br>
+              <span style="margin-top:4px; display:inline-block;">${scopePill(r.scope)}</span>
+            </div>
+            ${attendanceStatusPill(r, ev)}
+          </div>
+          <table style="font-size:12.5px;">
+            <tr><th>AM in</th><th>AM out</th><th>PM in</th><th>PM out</th></tr>
+            <tr><td>${r.amTimeIn?fmtDate(r.amTimeIn):'—'}</td><td>${r.amTimeOut?fmtDate(r.amTimeOut):'—'}</td><td>${r.pmTimeIn?fmtDate(r.pmTimeIn):'—'}</td><td>${r.pmTimeOut?fmtDate(r.pmTimeOut):'—'}</td></tr>
+          </table>
+          <button class="btn-danger" data-remove-att="${r.id}" style="margin-top:10px;">Remove this record</button>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
 function renderAdminRecords(){
   const events = ['all', ...DB.events.map(e=>e.name)];
   const depts = ['all', ...DB.departments];
   const scopes = ['all', 'section', 'department', 'ssg'];
   const scopeFilter = state.adminFilterScope || 'all';
-  let rows = DB.attendance.slice().sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0));
+  let rows = DB.attendance.slice();
   if(state.adminFilterEvent!=='all') rows = rows.filter(r=>r.eventName===state.adminFilterEvent);
   if(state.adminFilterDept!=='all') rows = rows.filter(r=>r.department===state.adminFilterDept);
   if(scopeFilter!=='all') rows = rows.filter(r=>r.scope===scopeFilter);
   const canBulkReset = state.adminFilterEvent !== 'all';
-  const shown = !!state.recordsShown;
-  const { items: pageRows, totalPages, page } = paginate(rows, state.recordsPage, ADMIN_PAGE_SIZE);
+  // group the filtered records by student — the row-level detail lives in the modal
+  const byStudent = {};
+  rows.forEach(r=>{
+    if(!byStudent[r.studentId]) byStudent[r.studentId] = { studentId:r.studentId, studentName:r.studentName, department:r.department, scopes:new Set(), latest:0 };
+    byStudent[r.studentId].scopes.add(r.scope);
+    byStudent[r.studentId].latest = Math.max(byStudent[r.studentId].latest, r.amTimeIn||0, r.pmTimeIn||0);
+  });
+  const studentRows = Object.values(byStudent).sort((a,b)=>b.latest-a.latest);
+  const { items: pageStudents, totalPages, page } = paginate(studentRows, state.recordsPage, ADMIN_PAGE_SIZE);
   return `
   <div class="page-head"><h1>All Records</h1><p>Full attendance log across every event, department, and desk (section, department, or SSG).</p></div>
   <div class="card" style="max-width:760px; margin-bottom:18px;">
@@ -1400,12 +1448,7 @@ function renderAdminRecords(){
         <select id="filter-scope">${scopes.map(s=>`<option value="${s}" ${scopeFilter===s?'selected':''}>${s==='all'?'all':scopeLabel(s)}</option>`).join('')}</select>
       </div>
     </div>
-    <button class="btn-gold" style="width:100%; margin-top:16px;" id="show-attendance-btn">Show Attendance</button>
-    <p class="hint">Pick your filters, then click to load matching records — this keeps every officer's section, department, and SSG check-ins from all loading at once.</p>
   </div>
-  ${!shown ? `
-    <div class="empty">Set your filters above and click "Show Attendance" to view records.</div>
-  ` : `
   <div style="margin-bottom:18px;">
     ${canBulkReset ? `
       <button class="btn-danger" id="bulk-reset-records-btn" ${rows.length===0?'disabled':''}>Reset all ${rows.length} record${rows.length===1?'':'s'} shown below</button>
@@ -1414,18 +1457,16 @@ function renderAdminRecords(){
       <p class="hint">Select a specific event above to reset all of its attendance at once.</p>
     `}
   </div>
-  <div class="section-title">Matching records <span class="pill gold">${rows.length}</span></div>
+  <div class="section-title">Students with matching records <span class="pill gold">${studentRows.length}</span></div>
   <div class="card" style="padding:0;">
     <table>
-      <tr><th>Student</th><th>Event</th><th>Via</th><th>Department</th><th>AM in</th><th>AM out</th><th>PM in</th><th>PM out</th><th>Status</th><th></th></tr>
-      ${pageRows.map(r=>{
-        const ev = DB.events.find(e=>e.id===r.eventId);
-        return `<tr><td>${r.studentName} <span style="color:var(--ink-soft);">(${r.studentId})</span></td><td>${r.eventName}</td><td>${scopePill(r.scope)}</td><td><span class="badge-dept">${r.department}</span></td><td>${r.amTimeIn?fmtDate(r.amTimeIn):'—'}</td><td>${r.amTimeOut?fmtDate(r.amTimeOut):'—'}</td><td>${r.pmTimeIn?fmtDate(r.pmTimeIn):'—'}</td><td>${r.pmTimeOut?fmtDate(r.pmTimeOut):'—'}</td><td>${attendanceStatusPill(r, ev)}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`;
-      }).join('') || `<tr><td colspan="10" class="empty">No records match this filter.</td></tr>`}
+      <tr><th>Student</th><th>Department</th><th>Recorded via</th><th></th></tr>
+      ${pageStudents.map(s=>`<tr><td>${s.studentName} <span style="color:var(--ink-soft);">(${s.studentId})</span></td><td><span class="badge-dept">${s.department}</span></td><td>${[...s.scopes].map(sc=>scopePill(sc)).join(' ')}</td><td><button class="btn-gold" data-show-attendance="${s.studentId}">Show Attendance</button></td></tr>`).join('') || `<tr><td colspan="4" class="empty">No records match this filter.</td></tr>`}
     </table>
   </div>
   ${paginationControls(page, totalPages, 'records')}
-  `}`;
+  ${renderStudentAttendanceModal()}
+  `;
 }
 function attachAdminHandlers(){
   document.querySelectorAll('.dept-check').forEach(el=>{
@@ -1571,18 +1612,22 @@ function attachAdminHandlers(){
   const officerNextBtn = document.getElementById('officer-next-btn');
   if(officerNextBtn) officerNextBtn.onclick = ()=>{ state.officerPage = (state.officerPage||1)+1; render(); };
   const fe = document.getElementById('filter-event');
-  if(fe) fe.onchange = ()=>{ state.adminFilterEvent = fe.value; state.recordsShown = false; render(); };
+  if(fe) fe.onchange = async ()=>{ state.adminFilterEvent = fe.value; state.recordsPage = 1; DB.attendance = await fetchKey('attendance', DB.attendance); render(); };
   const fd = document.getElementById('filter-dept');
-  if(fd) fd.onchange = ()=>{ state.adminFilterDept = fd.value; state.recordsShown = false; render(); };
+  if(fd) fd.onchange = ()=>{ state.adminFilterDept = fd.value; state.recordsPage = 1; render(); };
   const fs = document.getElementById('filter-scope');
-  if(fs) fs.onchange = ()=>{ state.adminFilterScope = fs.value; state.recordsShown = false; render(); };
-  const showAttendanceBtn = document.getElementById('show-attendance-btn');
-  if(showAttendanceBtn) showAttendanceBtn.onclick = async ()=>{
-    DB.attendance = await fetchKey('attendance', DB.attendance);
-    state.recordsShown = true;
-    state.recordsPage = 1;
-    render();
-  };
+  if(fs) fs.onchange = ()=>{ state.adminFilterScope = fs.value; state.recordsPage = 1; render(); };
+  document.querySelectorAll('[data-show-attendance]').forEach(el=>{
+    el.onclick = ()=>{
+      state.showAttendanceStudentId = el.dataset.showAttendance;
+      render();
+    };
+  });
+  const closeStudentAttModal = ()=>{ state.showAttendanceStudentId = null; render(); };
+  const closeStudentAttBtn = document.getElementById('close-student-attendance-modal-btn');
+  if(closeStudentAttBtn) closeStudentAttBtn.onclick = closeStudentAttModal;
+  const studentAttOverlay = document.getElementById('student-attendance-modal-overlay');
+  if(studentAttOverlay) studentAttOverlay.onclick = (e)=>{ if(e.target === studentAttOverlay) closeStudentAttModal(); };
   const recordsPrevBtn = document.getElementById('records-prev-btn');
   if(recordsPrevBtn) recordsPrevBtn.onclick = ()=>{ state.recordsPage = Math.max(1, (state.recordsPage||1)-1); render(); };
   const recordsNextBtn = document.getElementById('records-next-btn');
