@@ -164,6 +164,7 @@ let state = {
   route:'login',           // login | student | officer | admin
   authTab:'student',       // student | officer | admin
   authMode:'login',        // login | register
+  officerForgotModalOpen:false,
   currentUser:null,
   err:'',
   studentSubRoute:'checkin',
@@ -203,7 +204,8 @@ let state = {
   showAttendanceStudentId:null,
   recordsPage:1,
   attendeesPage:1,
-  lastResetPassword:null
+  lastResetPassword:null,
+  lastOfficerResetPassword:null
 };
 
 async function seedIfEmpty(){
@@ -315,8 +317,26 @@ function renderOfficerAuth(){
     <div class="field"><label>Officer username</label><input id="o-user" placeholder="set by the system admin"></div>
     ${pwField('o-pw', 'Password', '••••••••')}
     <button class="btn-primary" style="width:100%" id="officer-login-btn">Log in</button>
+    <p style="text-align:center; margin:10px 0 0 0;"><a id="officer-forgot-pw-link" style="font-size:12.5px; color:var(--ink-soft); font-weight:600; cursor:pointer;">Forgot password?</a></p>
     <div class="hint">Officer accounts are created by the system admin — section officers cover one section, department officers cover a whole department, SSG officers cover every department.</div>
+    ${state.officerForgotModalOpen ? renderOfficerForgotModal() : ''}
   `;
+}
+function renderOfficerForgotModal(){
+  return `
+  <div class="modal-overlay" id="officer-forgot-modal-overlay">
+    <div class="modal-card">
+      <button class="close-x" id="close-officer-forgot-modal-btn">&times;</button>
+      <h3 style="margin-top:0;">Forgot your password?</h3>
+      <p style="font-size:13.5px; color:var(--ink-soft); line-height:1.6;">
+        Officer passwords can only be reset by the <strong>system admin</strong> — there's no email or SMS
+        recovery for this app. Reach out to your SAS office and ask them to reset your account from
+        <strong>Manage Officers</strong>. They'll give you a new temporary password to log in with, which
+        you should change right away under <strong>My Profile</strong> once you're in.
+      </p>
+      <button class="btn-primary" style="width:100%; margin-top:8px;" id="close-officer-forgot-modal-btn-2">Got it</button>
+    </div>
+  </div>`;
 }
 function renderAdminAuth(){
   return `
@@ -329,7 +349,7 @@ function renderAdminAuth(){
 
 function attachLoginHandlers(){
   document.querySelectorAll('.auth-tab').forEach(el=>{
-    el.onclick = ()=>{ state.authTab = el.dataset.tab; state.err=''; render(); };
+    el.onclick = ()=>{ state.authTab = el.dataset.tab; state.err=''; state.officerForgotModalOpen=false; render(); };
   });
   document.querySelectorAll('.auth-sub a').forEach(el=>{
     el.onclick = ()=>{ state.authMode = el.dataset.mode; state.err=''; render(); };
@@ -375,6 +395,15 @@ function attachLoginHandlers(){
     DB.sections = await fetchKey('sections', DB.sections);
     state.currentUser = u; state.route = u.role; state.err=''; render();
   };
+  const forgotLink = document.getElementById('officer-forgot-pw-link');
+  if(forgotLink) forgotLink.onclick = ()=>{ state.officerForgotModalOpen = true; render(); };
+  const closeForgot = ()=>{ state.officerForgotModalOpen = false; render(); };
+  const closeForgotBtn1 = document.getElementById('close-officer-forgot-modal-btn');
+  if(closeForgotBtn1) closeForgotBtn1.onclick = closeForgot;
+  const closeForgotBtn2 = document.getElementById('close-officer-forgot-modal-btn-2');
+  if(closeForgotBtn2) closeForgotBtn2.onclick = closeForgot;
+  const forgotOverlay = document.getElementById('officer-forgot-modal-overlay');
+  if(forgotOverlay) forgotOverlay.onclick = (e)=>{ if(e.target === forgotOverlay) closeForgot(); };
   const aLogin = document.getElementById('admin-login-btn');
   if(aLogin) aLogin.onclick = async ()=>{
     const user = document.getElementById('a-user').value.trim();
@@ -430,7 +459,7 @@ function attachShellHandlers(){
         state.ssgSubRoute = sub;
       }
       if(role==='admin'){ state.adminSubRoute = sub; }
-      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null; state.recordsShown=false; state.showAttendanceStudentId=null; state.attendeesPage=1; state.eventModalOpen=false; state.editingEventId=null;
+      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.lastOfficerResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null; state.recordsShown=false; state.showAttendanceStudentId=null; state.attendeesPage=1; state.eventModalOpen=false; state.editingEventId=null;
       // an account's own department/section may have been changed by admin since login —
       // always refresh it so a stale, already-logged-in session doesn't keep enforcing old rules
       if(role==='officer' || role==='ssg' || role==='student'){
@@ -1416,11 +1445,24 @@ function renderAdminOfficers(){
   const countFor = t => t==='all' ? typedOfficers.length : typedOfficers.filter(o=>o.oType===t).length;
   const pillFor = t => t==='ssg' ? '<span class="pill gold">SSG</span>' : t==='department' ? '<span class="pill navy">Department</span>' : '<span class="pill green">Section</span>';
   const { items: officers, totalPages, page } = paginate(filtered, state.officerPage, ADMIN_PAGE_SIZE);
+  const reset = state.lastOfficerResetPassword;
   return `
   <div class="page-head-row">
     <div class="page-head" style="margin-bottom:0;"><h1>Manage Officers</h1><p>Section officers cover one section; department officers cover every section in a department; SSG officers cover the whole school.</p></div>
     <button class="btn-gold" id="open-add-officer-btn">+ Add officer</button>
   </div>
+  ${reset ? `
+    <div class="card" style="max-width:480px; margin-bottom:10px; border-color:var(--accent);">
+      <div class="pill gold" style="margin-bottom:10px;">Password reset</div>
+      <p style="font-size:13.5px; margin:0 0 10px 0;">New temporary password for <strong>${reset.name}</strong> (<span class="mono">${reset.username}</span>):</p>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div class="code-text" style="font-size:16px;">${reset.plaintext}</div>
+        <button class="btn-ghost" id="copy-officer-reset-pw-btn" data-pw="${reset.plaintext}">Copy</button>
+      </div>
+      <p class="hint">Copy and send this directly rather than retyping it by hand — it won't be shown again after you leave this page.</p>
+      <button class="btn-ghost" style="width:100%; margin-top:10px;" id="dismiss-officer-reset-btn">Dismiss</button>
+    </div>
+  ` : ''}
   <div class="card student-toolbar">
     <div class="dept-chip-row">
       <button class="officer-type-filter-btn dept-chip ${typeFilter==='all'?'active':''}" data-type="all">All officers <span class="chip-count">${countFor('all')}</span></button>
@@ -1437,7 +1479,7 @@ function renderAdminOfficers(){
   <div class="card" style="padding:0;">
     <table id="officer-table">
       <tr><th>Name</th><th>Username</th><th>Type</th><th>Department</th><th>Section</th><th></th></tr>
-      ${officers.map(o=>`<tr><td>${o.name}</td><td class="mono">${o.username}</td><td>${pillFor(o.oType)}</td><td>${o.oType==='ssg'?'—':`<span class="badge-dept">${o.department}</span>`}</td><td>${o.oType==='section' ? (o.section||'<span class="pill gold">not set</span>') : (o.oType==='department' ? '<span class="pill gold">all sections</span>' : '—')}</td><td><button class="btn-ghost" data-edit-officer="${o.username}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-del-officer="${o.username}">Remove</button></td></tr>`).join('') || `<tr><td colspan="6" class="empty">No officers match this filter.</td></tr>`}
+      ${officers.map(o=>`<tr><td>${o.name}</td><td class="mono">${o.username}</td><td>${pillFor(o.oType)}</td><td>${o.oType==='ssg'?'—':`<span class="badge-dept">${o.department}</span>`}</td><td>${o.oType==='section' ? (o.section||'<span class="pill gold">not set</span>') : (o.oType==='department' ? '<span class="pill gold">all sections</span>' : '—')}</td><td><button class="btn-ghost" data-edit-officer="${o.username}" style="margin-right:6px;">Edit</button><button class="btn-ghost" data-reset-officer="${o.username}" style="margin-right:6px;">Reset password</button><button class="btn-danger" data-del-officer="${o.username}">Remove</button></td></tr>`).join('') || `<tr><td colspan="6" class="empty">No officers match this filter.</td></tr>`}
     </table>
   </div>
   ${paginationControls(page, totalPages, 'officer')}
@@ -1717,6 +1759,32 @@ function attachAdminHandlers(){
       render();
     };
   });
+  document.querySelectorAll('[data-reset-officer]').forEach(el=>{
+    el.onclick = async ()=>{
+      const username = el.dataset.resetOfficer;
+      const u = DB.users[username];
+      if(!u) return;
+      if(!confirm(`Reset the password for ${u.name} (${username})? Their current password will stop working immediately.`)) return;
+      const temp = generateTempPassword();
+      u.passwordHash = hashPw(temp);
+      DB.users[username] = u;
+      await saveKey('users', DB.users);
+      state.lastOfficerResetPassword = { username, name:u.name, plaintext: temp };
+      render();
+    };
+  });
+  const dismissOfficerReset = document.getElementById('dismiss-officer-reset-btn');
+  if(dismissOfficerReset) dismissOfficerReset.onclick = ()=>{ state.lastOfficerResetPassword=null; render(); };
+  const copyOfficerResetBtn = document.getElementById('copy-officer-reset-pw-btn');
+  if(copyOfficerResetBtn) copyOfficerResetBtn.onclick = async ()=>{
+    try{
+      await navigator.clipboard.writeText(copyOfficerResetBtn.dataset.pw);
+      copyOfficerResetBtn.textContent = 'Copied!';
+      setTimeout(()=>{ copyOfficerResetBtn.textContent = 'Copy'; }, 1500);
+    }catch(e){
+      copyOfficerResetBtn.textContent = 'Copy failed — select manually';
+    }
+  };
   document.querySelectorAll('.officer-type-filter-btn').forEach(el=>{
     el.onclick = ()=>{
       state.officerTypeFilter = el.dataset.type;
