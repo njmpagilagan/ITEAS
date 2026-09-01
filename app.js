@@ -329,6 +329,10 @@ function attachLoginHandlers(){
     DB.users = await fetchKey('users', DB.users);
     const u = DB.users[user];
     if(!u || (u.role!=='officer' && u.role!=='ssg') || u.passwordHash!==hashPw(pw)){ state.err='Incorrect username or password.'; render(); return; }
+    // refresh reference data too, in case this tab was open/loaded well before events were set up
+    DB.events = await fetchKey('events', DB.events);
+    DB.departments = await fetchKey('departments', DB.departments);
+    DB.sections = await fetchKey('sections', DB.sections);
     state.currentUser = u; state.route = u.role; state.err=''; render();
   };
   const aLogin = document.getElementById('admin-login-btn');
@@ -394,14 +398,18 @@ function attachShellHandlers(){
         const fresh = DB.users[state.currentUser.id];
         if(fresh) state.currentUser = fresh;
       }
+      // events/departments/sections are admin-editable reference data that any role's screen
+      // may depend on (e.g. an officer's "Generate QR" event list) — always refresh on
+      // navigation so a long-open tab doesn't keep enforcing a stale copy from page load
+      DB.events = await fetchKey('events', DB.events);
+      DB.departments = await fetchKey('departments', DB.departments);
+      DB.sections = await fetchKey('sections', DB.sections);
       // views that show shared records should always reflect what's actually in the database right now,
       // not just whatever happened to be loaded when this tab was first opened
       if((role==='student' && sub==='history') || ((role==='officer'||role==='ssg') && sub==='attendees') || (role==='admin' && (sub==='overview' || sub==='records'))){
         DB.attendance = await fetchKey('attendance', DB.attendance);
       }
-      if(role==='admin' && (sub==='events' || sub==='departments' || sub==='officers')){
-        DB.events = await fetchKey('events', DB.events);
-        DB.departments = await fetchKey('departments', DB.departments);
+      if(role==='admin' && sub==='officers'){
         DB.users = await fetchKey('users', DB.users);
       }
       render();
