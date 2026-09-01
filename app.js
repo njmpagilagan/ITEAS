@@ -68,6 +68,19 @@ async function syncServerTimeOffset(){
   }catch(e){ console.error('Could not sync server time — falling back to local device clock', e); }
 }
 function serverNow(){ return Date.now() + serverTimeOffsetMs; }
+function todayStr(){
+  // uses server-corrected time so a device with a wrong system date still defaults to the right event
+  const d = new Date(serverNow());
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+function defaultEventId(events, explicitId){
+  if(explicitId) return explicitId;
+  const today = events.find(e=>e.date===todayStr());
+  return today ? today.id : (events[0] && events[0].id);
+}
 
 /* simple non-cryptographic hash - fine for a school demo, not production auth */
 function hashPw(pw){
@@ -704,7 +717,7 @@ function renderOfficer(){
   return renderProfile();
 }
 function renderOfficerGenerate(myEvents){
-  const activeId = state.officerActiveEventId || (myEvents[0] && myEvents[0].id);
+  const activeId = defaultEventId(myEvents, state.officerActiveEventId);
   const activeEvent = myEvents.find(e=>e.id===activeId);
   const evSession = eventSessionType(activeEvent);
   const session = evSession==='full' ? (state.officerSession || 'am') : evSession;
@@ -756,7 +769,7 @@ function renderOfficerGenerate(myEvents){
   `}`;
 }
 function renderOfficerAttendees(myEvents){
-  const activeId = state.officerActiveEventId || (myEvents[0] && myEvents[0].id);
+  const activeId = defaultEventId(myEvents, state.officerActiveEventId);
   const ev = myEvents.find(e=>e.id===activeId);
   const mySection = state.currentUser.section;
   const myScope = mySection ? 'section' : 'department';
@@ -803,7 +816,7 @@ function renderSsg(){
   return renderProfile();
 }
 function renderSsgGenerate(allEvents){
-  const activeId = state.officerActiveEventId || (allEvents[0] && allEvents[0].id);
+  const activeId = defaultEventId(allEvents, state.officerActiveEventId);
   const activeEvent = allEvents.find(e=>e.id===activeId);
   const evSession = eventSessionType(activeEvent);
   const session = evSession==='full' ? (state.officerSession || 'am') : evSession;
@@ -854,7 +867,7 @@ function renderSsgGenerate(allEvents){
   `}`;
 }
 function renderSsgAttendees(allEvents){
-  const activeId = state.officerActiveEventId || (allEvents[0] && allEvents[0].id);
+  const activeId = defaultEventId(allEvents, state.officerActiveEventId);
   const ev = allEvents.find(e=>e.id===activeId);
   const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id && a.scope==='ssg').sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0)) : [];
   const complete = rows.filter(r=>(r.amTimeIn&&r.amTimeOut)||(r.pmTimeIn&&r.pmTimeOut)).length;
