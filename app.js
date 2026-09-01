@@ -19,7 +19,7 @@ try{
 }
 
 /* ---------------- storage helpers ---------------- */
-const EMPTY_DEFAULTS = { users:{}, events:[], tokens:{}, attendance:[], departments:[], sections:{} };
+const EMPTY_DEFAULTS = { users:{}, events:[], tokens:{}, attendance:[], departments:[], sections:{}, adminLog:[] };
 async function loadAll(){
   if(!SUPABASE_CONFIGURED) return { ...EMPTY_DEFAULTS };
   const out = { ...EMPTY_DEFAULTS };
@@ -80,6 +80,21 @@ function defaultEventId(events, explicitId){
   if(explicitId) return explicitId;
   const today = events.find(e=>e.date===todayStr());
   return today ? today.id : (events[0] && events[0].id);
+}
+
+/* ---------------- admin action log ----------------
+   Lightweight accountability trail for actions taken from the SAS admin panel —
+   who did what, and when. Capped at 200 entries so it doesn't grow forever. */
+async function logAdminAction(action, details){
+  try{
+    DB.adminLog = await fetchKey('adminLog', DB.adminLog || []);
+    const actor = state.currentUser
+      ? `${state.currentUser.name} (${state.currentUser.username || state.currentUser.id})`
+      : 'Unknown';
+    DB.adminLog.unshift({ id: uid('log'), timestamp: serverNow(), actor, action, details: details || '' });
+    if(DB.adminLog.length > 200) DB.adminLog = DB.adminLog.slice(0, 200);
+    await saveKey('adminLog', DB.adminLog);
+  }catch(e){ console.error('Failed to record admin log entry', e); }
 }
 
 /* simple non-cryptographic hash - fine for a school demo, not production auth */
@@ -159,7 +174,7 @@ const TOKEN_TTL_MS = 25000; // grace window past a refresh before a code stops w
 let qrRotateTimer = null;
 let lastRenderedQrToken = null;
 
-let DB = { users:{}, events:[], tokens:{}, attendance:[], departments:[], sections:{} };
+let DB = { users:{}, events:[], tokens:{}, attendance:[], departments:[], sections:{}, adminLog:[] };
 let state = {
   route:'login',           // login | student | officer | admin
   authTab:'student',       // student | officer | admin
@@ -187,6 +202,7 @@ let state = {
   editingEventId:null,
   newOfficerDraft:{name:'', username:'', password:'', department:DEFAULT_DEPTS[0], section:'', type:'section'},
   adminFilterEvent:'all',
+  logPage:1,
   adminFilterDept:'all',
   adminFilterScope:'all',
   profileMsg:'',
@@ -423,7 +439,7 @@ function renderShell(innerHtml){
   const items = role==='student' ? [['checkin','Check In'],['history','My Attendance'],['profile','My Profile']]
               : role==='officer' ? [['generate','Generate QR'],['attendees','Attendees'],['profile','My Profile']]
               : role==='ssg' ? [['generate','Generate QR'],['attendees','Attendees'],['profile','My Profile']]
-              : [['overview','Overview'],['events','Manage Events'],['departments','Departments'],['students','Manage Students'],['officers','Manage Officers'],['records','All Records'],['profile','My Profile']];
+              : [['overview','Overview'],['events','Manage Events'],['departments','Departments'],['students','Manage Students'],['officers','Manage Officers'],['records','All Records'],['log','Activity Log'],['profile','My Profile']];
   const sub = role==='student' ? state.studentSubRoute : role==='officer' ? state.officerSubRoute : role==='ssg' ? state.ssgSubRoute : state.adminSubRoute;
   const roleLabel = role==='admin'?'System Admin':role==='officer'?(u.section?'Section Officer':'Department Officer'):role==='ssg'?'SSG Officer':'Student';
   return `
@@ -480,6 +496,10 @@ function attachShellHandlers(){
       }
       if(role==='admin' && sub==='officers'){
         DB.users = await fetchKey('users', DB.users);
+      }
+      if(role==='admin' && sub==='log'){
+        DB.adminLog = await fetchKey('adminLog', DB.adminLog || []);
+        state.logPage = 1;
       }
       render();
     };
@@ -1241,6 +1261,7 @@ function renderAdmin(){
   if(state.adminSubRoute==='students') return renderAdminStudents();
   if(state.adminSubRoute==='officers') return renderAdminOfficers();
   if(state.adminSubRoute==='records') return renderAdminRecords();
+  if(state.adminSubRoute==='log') return renderAdminLog();
   return renderProfile();
 }
 function renderAdminOverview(){
@@ -1624,6 +1645,20 @@ function renderAdminRecords(){
   ${renderStudentAttendanceModal()}
   `;
 }
+function renderAdminLog(){
+  const log = DB.adminLog || [];
+  const { items: pageEntries, totalPages, page } = paginate(log, state.logPage, ADMIN_PAGE_SIZE);
+  return `
+  <div class="page-head"><h1>Activity Log</h1><p>A record of actions taken from the admin panel — who did what, and when. Keeps the most recent 200 entries.</p></div>
+  <div class="card" style="padding:0;">
+    <table>
+      <tr><th>When</th><th>Admin</th><th>Action</th><th>Details</th></tr>
+      ${pageEntries.map(l=>`<tr><td style="white-space:nowrap;">${fmtDate(l.timestamp)}</td><td>${l.actor}</td><td>${l.action}</td><td style="color:var(--ink-soft);">${l.details||'—'}</td></tr>`).join('') || `<tr><td colspan="4" class="empty">No admin actions recorded yet.</td></tr>`}
+    </table>
+  </div>
+  ${paginationControls(page, totalPages, 'log')}
+  `;
+}
 function attachAdminHandlers(){
   document.querySelectorAll('.dept-check').forEach(el=>{
     el.onchange = ()=>{
@@ -1683,10 +1718,13 @@ function attachAdminHandlers(){
       const idx = DB.events.findIndex(e=>e.id===editing);
       if(idx===-1){ state.err='This event no longer exists.'; state.editingEventId=null; render(); return; }
       DB.events[idx] = {...DB.events[idx], name:d.name, date:d.date, departments:[...d.departments], sessionType: d.sessionType || 'full', sections:[...d.sections]};
+      await saveKey('events', DB.events);
+      await logAdminAction('Edited event', d.name);
     } else {
       DB.events.push({id: uid('evt'), name:d.name, date:d.date, departments:[...d.departments], sessionType: d.sessionType || 'full', sections:[...d.sections]});
+      await saveKey('events', DB.events);
+      await logAdminAction('Created event', d.name);
     }
-    await saveKey('events', DB.events);
     state.eventModalOpen = false;
     state.editingEventId = null;
     state.newEventDraft = {name:'', date:'', departments:[...DB.departments], sessionType:'full', sections:[]};
@@ -1705,8 +1743,11 @@ function attachAdminHandlers(){
   });
   document.querySelectorAll('[data-del-event]').forEach(el=>{
     el.onclick = async ()=>{
+      const ev = DB.events.find(e=>e.id===el.dataset.delEvent);
+      if(!confirm(`Remove "${ev ? ev.name : 'this event'}"? This does not delete existing attendance records for it.`)) return;
       DB.events = DB.events.filter(e=>e.id!==el.dataset.delEvent);
       await saveKey('events', DB.events);
+      await logAdminAction('Deleted event', ev ? ev.name : el.dataset.delEvent);
       render();
     };
   });
@@ -1769,6 +1810,8 @@ function attachAdminHandlers(){
       if(existing.role==='officer'){ existing.department = department; existing.section = section; }
       if(pw) existing.passwordHash = hashPw(pw);
       DB.users[editing] = existing;
+      await saveKey('users', DB.users);
+      await logAdminAction('Edited officer', `${name} (${editing})`);
     } else {
       if(DB.users[username]){ state.err='That username is taken.'; render(); return; }
       if(type==='ssg'){
@@ -1776,8 +1819,9 @@ function attachAdminHandlers(){
       } else {
         DB.users[username] = {id:username, role:'officer', name, username, department, section, passwordHash:hashPw(pw)};
       }
+      await saveKey('users', DB.users);
+      await logAdminAction('Created officer', `${name} (${username}), ${scopeLabel(type)}`);
     }
-    await saveKey('users', DB.users);
     state.officerModalOpen = false;
     state.newOfficerDraft = {name:'', username:'', password:'', department:DB.departments[0], section:'', type:'section'};
     state.editingOfficerUsername = null;
@@ -1796,8 +1840,11 @@ function attachAdminHandlers(){
   });
   document.querySelectorAll('[data-del-officer]').forEach(el=>{
     el.onclick = async ()=>{
+      const o = DB.users[el.dataset.delOfficer];
+      if(!confirm(`Remove officer account "${o ? o.name : el.dataset.delOfficer}"? This cannot be undone.`)) return;
       delete DB.users[el.dataset.delOfficer];
       await saveKey('users', DB.users);
+      await logAdminAction('Deleted officer', o ? `${o.name} (${el.dataset.delOfficer})` : el.dataset.delOfficer);
       render();
     };
   });
@@ -1811,6 +1858,7 @@ function attachAdminHandlers(){
       u.passwordHash = hashPw(temp);
       DB.users[username] = u;
       await saveKey('users', DB.users);
+      await logAdminAction('Reset officer password', `${u.name} (${username})`);
       state.lastOfficerResetPassword = { username, name:u.name, plaintext: temp };
       render();
     };
@@ -1873,6 +1921,7 @@ function attachAdminHandlers(){
     if(DB.departments.includes(name)){ state.err='That department already exists.'; render(); return; }
     DB.departments.push(name);
     await saveKey('departments', DB.departments);
+    await logAdminAction('Added department', name);
     state.err='';
     render();
   };
@@ -1884,6 +1933,7 @@ function attachAdminHandlers(){
       delete DB.sections[dept];
       await saveKey('departments', DB.departments);
       await saveKey('sections', DB.sections);
+      await logAdminAction('Deleted department', dept);
       render();
     };
   });
@@ -1903,6 +1953,7 @@ function attachAdminHandlers(){
     if(DB.sections[dept].some(s=>normSection(s)===normSection(name))){ state.err='That section already exists for this department.'; render(); return; }
     DB.sections[dept].push(name);
     await saveKey('sections', DB.sections);
+    await logAdminAction('Added section', `${name} (${dept})`);
     state.err='';
     render();
   }
@@ -1912,6 +1963,7 @@ function attachAdminHandlers(){
       const name = el.dataset.delSectionName;
       DB.sections[dept] = (DB.sections[dept]||[]).filter(s=>s!==name);
       await saveKey('sections', DB.sections);
+      await logAdminAction('Deleted section', `${name} (${dept})`);
       render();
     };
   });
@@ -1956,6 +2008,7 @@ function attachAdminHandlers(){
     u.name = name; u.department = department; u.section = section;
     DB.users[id] = u;
     await saveKey('users', DB.users);
+    await logAdminAction('Edited student', `${name} (${id})`);
     state.editingStudentId = null;
     state.err = '';
     render();
@@ -1972,6 +2025,7 @@ function attachAdminHandlers(){
       u.passwordHash = hashPw(temp);
       DB.users[id] = u;
       await saveKey('users', DB.users);
+      await logAdminAction('Reset student password', `${u.name} (${id})`);
       state.lastResetPassword = { studentId:id, name:u.name, plaintext: temp };
       render();
     };
@@ -1992,6 +2046,7 @@ function attachAdminHandlers(){
     el.onclick = async ()=>{
       if(!confirm('Remove this attendance record? This clears both time-in and time-out for that student on this event.')) return;
       await removeAttendanceRecord(el.dataset.removeAtt);
+      await logAdminAction('Removed attendance record', el.dataset.removeAtt);
       render();
     };
   });
@@ -2006,8 +2061,13 @@ function attachAdminHandlers(){
     if(!confirm(`Reset attendance for ${eventName}${dept!=='all'?` (${dept})`:''}? This permanently removes ${toRemove.length} record${toRemove.length===1?'':'s'} — students will need to scan in again from scratch.`)) return;
     DB.attendance = DB.attendance.filter(a => !(a.eventId===eventId && (dept==='all' || a.department===dept)));
     await saveKey('attendance', DB.attendance);
+    await logAdminAction('Bulk-reset attendance', `${toRemove.length} record(s) for ${eventName}${dept!=='all'?` (${dept})`:''}`);
     render();
   };
+  const logPrevBtn = document.getElementById('log-prev-btn');
+  if(logPrevBtn) logPrevBtn.onclick = ()=>{ state.logPage = Math.max(1, (state.logPage||1)-1); render(); };
+  const logNextBtn = document.getElementById('log-next-btn');
+  if(logNextBtn) logNextBtn.onclick = ()=>{ state.logPage = (state.logPage||1)+1; render(); };
   if(state.adminSubRoute==='profile') attachProfileHandlers();
   wirePasswordToggles();
 }
