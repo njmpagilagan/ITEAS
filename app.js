@@ -366,7 +366,7 @@ function attachLoginHandlers(){
     DB.users = await fetchKey('users', DB.users); // always check against the current account, not whatever loaded when this tab opened
     const u = DB.users[id];
     if(!u || u.role!=='student' || u.passwordHash!==hashPw(pw)){ state.err='Incorrect student ID or password.'; render(); return; }
-    state.currentUser = u; state.route='student'; state.err=''; render();
+    state.currentUser = u; state.route='student'; state.err=''; startBackgroundSync(); render();
   };
   const sReg = document.getElementById('student-register-btn');
   if(sReg) sReg.onclick = async ()=>{
@@ -380,7 +380,7 @@ function attachLoginHandlers(){
     if(DB.users[id]){ state.err='An account with that student ID already exists.'; render(); return; }
     DB.users[id] = {id, role:'student', name, section, department, passwordHash:hashPw(pw)};
     await saveKey('users', DB.users);
-    state.currentUser = DB.users[id]; state.route='student'; state.err=''; render();
+    state.currentUser = DB.users[id]; state.route='student'; state.err=''; startBackgroundSync(); render();
   };
   const oLogin = document.getElementById('officer-login-btn');
   if(oLogin) oLogin.onclick = async ()=>{
@@ -393,7 +393,7 @@ function attachLoginHandlers(){
     DB.events = await fetchKey('events', DB.events);
     DB.departments = await fetchKey('departments', DB.departments);
     DB.sections = await fetchKey('sections', DB.sections);
-    state.currentUser = u; state.route = u.role; state.err=''; render();
+    state.currentUser = u; state.route = u.role; state.err=''; startBackgroundSync(); render();
   };
   const forgotLink = document.getElementById('officer-forgot-pw-link');
   if(forgotLink) forgotLink.onclick = ()=>{ state.officerForgotModalOpen = true; render(); };
@@ -411,7 +411,7 @@ function attachLoginHandlers(){
     DB.users = await fetchKey('users', DB.users);
     const u = DB.users[user];
     if(!u || u.role!=='admin' || u.passwordHash!==hashPw(pw)){ state.err='Incorrect username or password.'; render(); return; }
-    state.currentUser = u; state.route='admin'; state.err=''; render();
+    state.currentUser = u; state.route='admin'; state.err=''; startBackgroundSync(); render();
   };
   wirePasswordToggles();
 }
@@ -485,7 +485,7 @@ function attachShellHandlers(){
     };
   });
   const out = document.getElementById('logout-btn');
-  if(out) out.onclick = ()=>{ stopQrRotation(); state.officerRotating=false; state.currentUser=null; state.route='login'; state.err=''; render(); };
+  if(out) out.onclick = ()=>{ stopQrRotation(); stopBackgroundSync(); state.officerRotating=false; state.currentUser=null; state.route='login'; state.err=''; render(); };
 }
 
 /* ---------------- STUDENT ---------------- */
@@ -703,6 +703,31 @@ function stopCamera(){
 }
 
 /* ---------------- OFFICER ---------------- */
+let backgroundSyncTimer = null;
+function startBackgroundSync(){
+  stopBackgroundSync();
+  backgroundSyncTimer = setInterval(async ()=>{
+    if(!state.currentUser) return;
+    // reference data (events, departments, sections) is admin-editable and can change while
+    // someone is idly sitting on a screen with no nav clicks to trigger a refresh — this keeps
+    // it self-healing within a few seconds instead of requiring a manual navigate-away-and-back
+    const [freshEvents, freshDepartments, freshSections] = await Promise.all([
+      fetchKey('events', DB.events),
+      fetchKey('departments', DB.departments),
+      fetchKey('sections', DB.sections)
+    ]);
+    const changed = JSON.stringify(freshEvents)!==JSON.stringify(DB.events)
+      || JSON.stringify(freshDepartments)!==JSON.stringify(DB.departments)
+      || JSON.stringify(freshSections)!==JSON.stringify(DB.sections);
+    DB.events = freshEvents;
+    DB.departments = freshDepartments;
+    DB.sections = freshSections;
+    if(changed && state.currentUser && !state.cameraOpen) render();
+  }, 15000);
+}
+function stopBackgroundSync(){
+  if(backgroundSyncTimer){ clearInterval(backgroundSyncTimer); backgroundSyncTimer=null; }
+}
 function stopQrRotation(){
   if(qrRotateTimer){ clearInterval(qrRotateTimer); qrRotateTimer=null; }
 }
@@ -1039,10 +1064,19 @@ function attachOfficerHandlers(){
   const start = document.getElementById('start-qr-btn');
   if(start) start.onclick = async ()=>{
     const eventId = document.getElementById('officer-event-select').value;
+    // re-check against fresh data in case admin changed this event's section restriction
+    // since this page last loaded — closes the gap the periodic background sync leaves open
+    DB.events = await fetchKey('events', DB.events);
+    const ev = DB.events.find(e=>e.id===eventId);
+    if(!ev){ state.err='This event no longer exists. Pick another one.'; render(); return; }
+    const mySection = state.currentUser.section;
+    if(mySection && ev.sections && ev.sections.length>0 && !ev.sections.some(s=>normSection(s)===normSection(mySection))){
+      state.err='This event is no longer open to your section. Refresh the page to see the current event list.';
+      render(); return;
+    }
     state.officerActiveEventId = eventId;
     state.officerRotating = true;
     const scope = state.currentUser.section ? 'section' : 'department';
-    const ev = DB.events.find(e=>e.id===eventId);
     const evSession = eventSessionType(ev);
     const session = evSession==='full' ? (state.officerSession || 'am') : evSession;
     await startQrRotation(eventId, state.currentUser.department, state.currentUser.section || null, state.officerPhase, scope, session);
