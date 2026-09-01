@@ -161,6 +161,8 @@ let state = {
   officerModalOpen:false,
   officerPage:1,
   officerSearchQuery:'',
+  recordsShown:false,
+  recordsPage:1,
   lastResetPassword:null
 };
 
@@ -384,7 +386,7 @@ function attachShellHandlers(){
         state.ssgSubRoute = sub;
       }
       if(role==='admin'){ state.adminSubRoute = sub; }
-      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null;
+      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null; state.recordsShown=false;
       // an account's own department/section may have been changed by admin since login —
       // always refresh it so a stale, already-logged-in session doesn't keep enforcing old rules
       if(role==='officer' || role==='ssg' || role==='student'){
@@ -1350,22 +1352,31 @@ function renderAdminRecords(){
   if(state.adminFilterDept!=='all') rows = rows.filter(r=>r.department===state.adminFilterDept);
   if(scopeFilter!=='all') rows = rows.filter(r=>r.scope===scopeFilter);
   const canBulkReset = state.adminFilterEvent !== 'all';
+  const shown = !!state.recordsShown;
+  const { items: pageRows, totalPages, page } = paginate(rows, state.recordsPage, ADMIN_PAGE_SIZE);
   return `
   <div class="page-head"><h1>All Records</h1><p>Full attendance log across every event, department, and desk (section, department, or SSG).</p></div>
-  <div class="row" style="margin-bottom:18px; max-width:700px;">
-    <div class="field" style="margin-bottom:0; flex:1;">
-      <label>Event</label>
-      <select id="filter-event">${events.map(e=>`<option ${state.adminFilterEvent===e?'selected':''}>${e}</option>`).join('')}</select>
+  <div class="card" style="max-width:760px; margin-bottom:18px;">
+    <div class="row">
+      <div class="field" style="margin-bottom:0; flex:1;">
+        <label>Event</label>
+        <select id="filter-event">${events.map(e=>`<option ${state.adminFilterEvent===e?'selected':''}>${e}</option>`).join('')}</select>
+      </div>
+      <div class="field" style="margin-bottom:0; flex:1;">
+        <label>Department</label>
+        <select id="filter-dept">${depts.map(dp=>`<option ${state.adminFilterDept===dp?'selected':''}>${dp}</option>`).join('')}</select>
+      </div>
+      <div class="field" style="margin-bottom:0; flex:1;">
+        <label>Via</label>
+        <select id="filter-scope">${scopes.map(s=>`<option value="${s}" ${scopeFilter===s?'selected':''}>${s==='all'?'all':scopeLabel(s)}</option>`).join('')}</select>
+      </div>
     </div>
-    <div class="field" style="margin-bottom:0; flex:1;">
-      <label>Department</label>
-      <select id="filter-dept">${depts.map(dp=>`<option ${state.adminFilterDept===dp?'selected':''}>${dp}</option>`).join('')}</select>
-    </div>
-    <div class="field" style="margin-bottom:0; flex:1;">
-      <label>Via</label>
-      <select id="filter-scope">${scopes.map(s=>`<option value="${s}" ${scopeFilter===s?'selected':''}>${s==='all'?'all':scopeLabel(s)}</option>`).join('')}</select>
-    </div>
+    <button class="btn-gold" style="width:100%; margin-top:16px;" id="show-attendance-btn">Show Attendance</button>
+    <p class="hint">Pick your filters, then click to load matching records — this keeps every officer's section, department, and SSG check-ins from all loading at once.</p>
   </div>
+  ${!shown ? `
+    <div class="empty">Set your filters above and click "Show Attendance" to view records.</div>
+  ` : `
   <div style="margin-bottom:18px;">
     ${canBulkReset ? `
       <button class="btn-danger" id="bulk-reset-records-btn" ${rows.length===0?'disabled':''}>Reset all ${rows.length} record${rows.length===1?'':'s'} shown below</button>
@@ -1374,15 +1385,18 @@ function renderAdminRecords(){
       <p class="hint">Select a specific event above to reset all of its attendance at once.</p>
     `}
   </div>
+  <div class="section-title">Matching records <span class="pill gold">${rows.length}</span></div>
   <div class="card" style="padding:0;">
     <table>
       <tr><th>Student</th><th>Event</th><th>Via</th><th>Department</th><th>AM in</th><th>AM out</th><th>PM in</th><th>PM out</th><th>Status</th><th></th></tr>
-      ${rows.map(r=>{
+      ${pageRows.map(r=>{
         const ev = DB.events.find(e=>e.id===r.eventId);
         return `<tr><td>${r.studentName} <span style="color:var(--ink-soft);">(${r.studentId})</span></td><td>${r.eventName}</td><td>${scopePill(r.scope)}</td><td><span class="badge-dept">${r.department}</span></td><td>${r.amTimeIn?fmtDate(r.amTimeIn):'—'}</td><td>${r.amTimeOut?fmtDate(r.amTimeOut):'—'}</td><td>${r.pmTimeIn?fmtDate(r.pmTimeIn):'—'}</td><td>${r.pmTimeOut?fmtDate(r.pmTimeOut):'—'}</td><td>${attendanceStatusPill(r, ev)}</td><td><button class="btn-danger" data-remove-att="${r.id}">Remove</button></td></tr>`;
       }).join('') || `<tr><td colspan="10" class="empty">No records match this filter.</td></tr>`}
     </table>
-  </div>`;
+  </div>
+  ${paginationControls(page, totalPages, 'records')}
+  `}`;
 }
 function attachAdminHandlers(){
   document.querySelectorAll('.dept-check').forEach(el=>{
@@ -1528,11 +1542,22 @@ function attachAdminHandlers(){
   const officerNextBtn = document.getElementById('officer-next-btn');
   if(officerNextBtn) officerNextBtn.onclick = ()=>{ state.officerPage = (state.officerPage||1)+1; render(); };
   const fe = document.getElementById('filter-event');
-  if(fe) fe.onchange = ()=>{ state.adminFilterEvent = fe.value; render(); };
+  if(fe) fe.onchange = ()=>{ state.adminFilterEvent = fe.value; state.recordsShown = false; render(); };
   const fd = document.getElementById('filter-dept');
-  if(fd) fd.onchange = ()=>{ state.adminFilterDept = fd.value; render(); };
+  if(fd) fd.onchange = ()=>{ state.adminFilterDept = fd.value; state.recordsShown = false; render(); };
   const fs = document.getElementById('filter-scope');
-  if(fs) fs.onchange = ()=>{ state.adminFilterScope = fs.value; render(); };
+  if(fs) fs.onchange = ()=>{ state.adminFilterScope = fs.value; state.recordsShown = false; render(); };
+  const showAttendanceBtn = document.getElementById('show-attendance-btn');
+  if(showAttendanceBtn) showAttendanceBtn.onclick = async ()=>{
+    DB.attendance = await fetchKey('attendance', DB.attendance);
+    state.recordsShown = true;
+    state.recordsPage = 1;
+    render();
+  };
+  const recordsPrevBtn = document.getElementById('records-prev-btn');
+  if(recordsPrevBtn) recordsPrevBtn.onclick = ()=>{ state.recordsPage = Math.max(1, (state.recordsPage||1)-1); render(); };
+  const recordsNextBtn = document.getElementById('records-next-btn');
+  if(recordsNextBtn) recordsNextBtn.onclick = ()=>{ state.recordsPage = (state.recordsPage||1)+1; render(); };
   const addDept = document.getElementById('add-dept-btn');
   if(addDept) addDept.onclick = async ()=>{
     const nameEl = document.getElementById('new-dept-name');
