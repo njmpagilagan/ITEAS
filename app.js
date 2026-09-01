@@ -48,6 +48,27 @@ async function fetchKey(key, fallback){
   }catch(e){ console.error('Supabase fetch failed', key, e); return fallback; }
 }
 
+/* ---------------- clock-skew correction ----------------
+   QR expiry compares a timestamp created on one device (the officer's) against a check
+   made on another (the scanning student's phone). If either device's clock is off, codes
+   can look "expired" the instant they're generated even when scanned within a second.
+   Fix: measure each device's own offset from the server's clock (via the Date header every
+   HTTP response includes) and always use serverNow() — Date.now() corrected by that
+   offset — for anything expiry-related, instead of the device's raw local clock. */
+let serverTimeOffsetMs = 0;
+async function syncServerTimeOffset(){
+  if(!SUPABASE_CONFIGURED) return;
+  try{
+    const res = await fetch(SUPABASE_URL + '/rest/v1/', { method:'HEAD', headers:{ apikey: SUPABASE_ANON_KEY } });
+    const dateHeader = res.headers.get('date');
+    if(dateHeader){
+      const serverTime = new Date(dateHeader).getTime();
+      if(!isNaN(serverTime)) serverTimeOffsetMs = serverTime - Date.now();
+    }
+  }catch(e){ console.error('Could not sync server time — falling back to local device clock', e); }
+}
+function serverNow(){ return Date.now() + serverTimeOffsetMs; }
+
 /* simple non-cryptographic hash - fine for a school demo, not production auth */
 function hashPw(pw){
   pw = (pw || '').trim(); // guards against stray whitespace from typing/copy-paste breaking a match
@@ -514,7 +535,7 @@ async function tryUseToken(rawCode){
   DB.tokens = await fetchKey('tokens', DB.tokens);
   const tok = DB.tokens[code];
   if(!tok){ fail('That code is not valid. Ask the officer for the current QR.'); return; }
-  if((Date.now() - tok.createdAt) > TOKEN_TTL_MS){
+  if((serverNow() - tok.createdAt) > TOKEN_TTL_MS){
     fail('This QR code has expired. It refreshes often — ask the officer to show the current one.');
     return;
   }
@@ -639,17 +660,17 @@ function stopQrRotation(){
 }
 async function generateRotatingToken(eventId, department, section, phase, scope, session){
   const token = uid('qr').toUpperCase();
-  DB.tokens[token] = {eventId, department, section, phase, scope: scope || 'section', session: session || 'am', createdAt: Date.now()};
+  DB.tokens[token] = {eventId, department, section, phase, scope: scope || 'section', session: session || 'am', createdAt: serverNow()};
   // prune this desk's old expired tokens so storage doesn't grow forever
   Object.keys(DB.tokens).forEach(t=>{
     const info = DB.tokens[t];
-    if(info.eventId===eventId && info.department===department && normSection(info.section)===normSection(section) && t!==token && (Date.now()-info.createdAt)>TOKEN_TTL_MS){
+    if(info.eventId===eventId && info.department===department && normSection(info.section)===normSection(section) && t!==token && (serverNow()-info.createdAt)>TOKEN_TTL_MS){
       delete DB.tokens[t];
     }
   });
   await saveKey('tokens', DB.tokens);
   state.officerToken = token;
-  state.officerTokenCreatedAt = Date.now();
+  state.officerTokenCreatedAt = serverNow();
 }
 async function startQrRotation(eventId, department, section, phase, scope, session){
   stopQrRotation();
@@ -663,7 +684,7 @@ async function officerTick(eventId, department, section, phase, scope, session){
   // pull the latest attendance log so we can tell if someone just used this code
   DB.attendance = await fetchKey('attendance', DB.attendance);
   const consumed = DB.attendance.some(a => a.tokenUsed === state.officerToken);
-  const elapsed = Date.now() - state.officerTokenCreatedAt;
+  const elapsed = serverNow() - state.officerTokenCreatedAt;
   if(consumed || elapsed >= ROTATE_MS){
     await generateRotatingToken(eventId, department, section, phase, scope, session);
     render(); // full render only when the token actually changes, so the QR redraws just once
@@ -687,7 +708,7 @@ function renderOfficerGenerate(myEvents){
   const evSession = eventSessionType(activeEvent);
   const session = evSession==='full' ? (state.officerSession || 'am') : evSession;
   const remaining = state.officerRotating && state.officerTokenCreatedAt
-    ? Math.max(0, Math.ceil((ROTATE_MS - (Date.now()-state.officerTokenCreatedAt))/1000)) : null;
+    ? Math.max(0, Math.ceil((ROTATE_MS - (serverNow()-state.officerTokenCreatedAt))/1000)) : null;
   const mySection = state.currentUser.section;
   return `
   <div class="page-head"><h1>Generate check-in QR</h1><p><span class="badge-dept">${state.currentUser.department}</span> ${mySection ? `· Section <span class="badge-dept">${mySection}</span>` : `· <span class="pill gold">Whole department — every section</span>`}</p></div>
@@ -786,7 +807,7 @@ function renderSsgGenerate(allEvents){
   const evSession = eventSessionType(activeEvent);
   const session = evSession==='full' ? (state.officerSession || 'am') : evSession;
   const remaining = state.officerRotating && state.officerTokenCreatedAt
-    ? Math.max(0, Math.ceil((ROTATE_MS - (Date.now()-state.officerTokenCreatedAt))/1000)) : null;
+    ? Math.max(0, Math.ceil((ROTATE_MS - (serverNow()-state.officerTokenCreatedAt))/1000)) : null;
   return `
   <div class="page-head"><h1>Generate check-in QR</h1><p><span class="pill gold">SSG — all departments &amp; sections</span></p></div>
   ${allEvents.length===0 ? `<div class="empty">No events have been set up yet. Ask the system admin to add one.</div>` : `
@@ -1740,5 +1761,6 @@ function renderSetupNeeded(){
     return;
   }
   await seedIfEmpty();
+  await syncServerTimeOffset();
   render();
 })();
