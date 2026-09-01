@@ -182,6 +182,8 @@ let state = {
   officerPhase:'in',       // 'in' (time-in) or 'out' (time-out)
   officerSession:'am',     // 'am' or 'pm' (only relevant for whole-day events)
   newEventDraft:{name:'', date:'', departments:[...DEFAULT_DEPTS], sessionType:'full', sections:[]},
+  eventModalOpen:false,
+  editingEventId:null,
   newOfficerDraft:{name:'', username:'', password:'', department:DEFAULT_DEPTS[0], section:'', type:'section'},
   adminFilterEvent:'all',
   adminFilterDept:'all',
@@ -428,7 +430,7 @@ function attachShellHandlers(){
         state.ssgSubRoute = sub;
       }
       if(role==='admin'){ state.adminSubRoute = sub; }
-      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null; state.recordsShown=false; state.showAttendanceStudentId=null; state.attendeesPage=1;
+      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null; state.recordsShown=false; state.showAttendanceStudentId=null; state.attendeesPage=1; state.eventModalOpen=false; state.editingEventId=null;
       // an account's own department/section may have been changed by admin since login —
       // always refresh it so a stale, already-logged-in session doesn't keep enforcing old rules
       if(role==='officer' || role==='ssg' || role==='student'){
@@ -1204,55 +1206,70 @@ function renderAdminOverview(){
     </table>
   </div>`;
 }
-function renderAdminEvents(){
+function renderEventModal(){
   const d = state.newEventDraft;
+  const editing = state.editingEventId;
   const sessionType = d.sessionType || 'full';
   return `
-  <div class="page-head"><h1>Manage Events</h1><p>Create the events officers will generate QR codes for.</p></div>
-  <div class="card" style="max-width:520px; margin-bottom:16px;">
-    <div class="field"><label>Event name</label><input id="ev-name" value="${d.name}" placeholder="Foundation Week 2026"></div>
-    <div class="field"><label>Date</label><input id="ev-date" type="date" value="${d.date}"></div>
-    <div class="field">
-      <label>Duration</label>
-      <div class="auth-tabs" style="margin-bottom:0;">
-        <div class="auth-tab ev-session-tab ${sessionType==='full'?'active':''}" data-session="full">Whole day (AM + PM)</div>
-        <div class="auth-tab ev-session-tab ${sessionType==='am'?'active':''}" data-session="am">AM only</div>
-        <div class="auth-tab ev-session-tab ${sessionType==='pm'?'active':''}" data-session="pm">PM only</div>
+  <div class="modal-overlay" id="event-modal-overlay">
+    <div class="modal-card">
+      <button class="close-x" id="close-event-modal-btn">&times;</button>
+      ${editing ? `<div class="pill gold" style="margin-bottom:10px;">Editing event</div>` : `<h3 style="margin-top:0;">Add event</h3>`}
+      <div class="field"><label>Event name</label><input id="ev-name" value="${d.name}" placeholder="Foundation Week 2026"></div>
+      <div class="field"><label>Date</label><input id="ev-date" type="date" value="${d.date}"></div>
+      <div class="field">
+        <label>Duration</label>
+        <div class="auth-tabs" style="margin-bottom:0;">
+          <div class="auth-tab ev-session-tab ${sessionType==='full'?'active':''}" data-session="full">Whole day (AM + PM)</div>
+          <div class="auth-tab ev-session-tab ${sessionType==='am'?'active':''}" data-session="am">AM only</div>
+          <div class="auth-tab ev-session-tab ${sessionType==='pm'?'active':''}" data-session="pm">PM only</div>
+        </div>
+        <p class="hint">${sessionType==='full' ? 'Students scan 4 times: AM time in/out, then PM time in/out.' : `Students scan 2 times: ${sessionType.toUpperCase()} time in and time out.`}</p>
       </div>
-      <p class="hint">${sessionType==='full' ? 'Students scan 4 times: AM time in/out, then PM time in/out.' : `Students scan 2 times: ${sessionType.toUpperCase()} time in and time out.`}</p>
+      <div class="field">
+        <label>Participating departments</label>
+        ${DB.departments.map(dep=>`
+          <label style="text-transform:none; font-weight:400; display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+            <input type="checkbox" style="width:auto;" class="dept-check" value="${dep}" ${d.departments.includes(dep)?'checked':''}> ${dep}
+          </label>`).join('')}
+      </div>
+      <div class="field">
+        <label>Restrict to specific sections (optional)</label>
+        <p class="hint" style="margin-top:-4px;">Leave everything unchecked to open this event to every section in the departments above. Check specific sections to limit it — only officers of those sections will see this event.</p>
+        ${d.departments.length===0 ? `<p class="hint">Pick a department above first.</p>` : d.departments.map(dep=>{
+          const secs = sectionsFor(dep);
+          if(secs.length===0) return '';
+          return `<div style="margin-bottom:8px;">
+            <div style="font-size:11.5px; font-weight:700; color:var(--ink-soft); margin-bottom:4px;">${dep}</div>
+            ${secs.map(sec=>`
+              <label style="text-transform:none; font-weight:400; display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                <input type="checkbox" style="width:auto;" class="ev-section-check" value="${sec}" ${d.sections.includes(sec)?'checked':''}> ${sec}
+              </label>`).join('')}
+          </div>`;
+        }).join('')}
+      </div>
+      ${state.err ? `<div class="err">${state.err}</div>` : ''}
+      <button class="btn-primary" style="width:100%;" id="create-event-btn">${editing ? 'Save changes' : 'Create event'}</button>
+      <button class="btn-ghost" style="width:100%; margin-top:8px;" id="close-event-modal-btn-2">Cancel</button>
     </div>
-    <div class="field">
-      <label>Participating departments</label>
-      ${DB.departments.map(dep=>`
-        <label style="text-transform:none; font-weight:400; display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-          <input type="checkbox" style="width:auto;" class="dept-check" value="${dep}" ${d.departments.includes(dep)?'checked':''}> ${dep}
-        </label>`).join('')}
-    </div>
-    <div class="field">
-      <label>Restrict to specific sections (optional)</label>
-      <p class="hint" style="margin-top:-4px;">Leave everything unchecked to open this event to every section in the departments above. Check specific sections to limit it — only officers of those sections will see this event.</p>
-      ${d.departments.length===0 ? `<p class="hint">Pick a department above first.</p>` : d.departments.map(dep=>{
-        const secs = sectionsFor(dep);
-        if(secs.length===0) return '';
-        return `<div style="margin-bottom:8px;">
-          <div style="font-size:11.5px; font-weight:700; color:var(--ink-soft); margin-bottom:4px;">${dep}</div>
-          ${secs.map(sec=>`
-            <label style="text-transform:none; font-weight:400; display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-              <input type="checkbox" style="width:auto;" class="ev-section-check" value="${sec}" ${d.sections.includes(sec)?'checked':''}> ${sec}
-            </label>`).join('')}
-        </div>`;
-      }).join('')}
-    </div>
-    ${state.err ? `<div class="err">${state.err}</div>` : ''}
-    <button class="btn-primary" style="width:100%;" id="create-event-btn">Create event</button>
+  </div>`;
+}
+function renderAdminEvents(){
+  const modalOpen = state.eventModalOpen || !!state.editingEventId;
+  return `
+  <div class="page-head-row">
+    <div class="page-head" style="margin-bottom:0;"><h1>Manage Events</h1><p>Create the events officers will generate QR codes for.</p></div>
+    <button class="btn-gold" id="open-add-event-btn">+ Add event</button>
   </div>
   <div class="section-title">All events</div>
   <div class="card" style="padding:0;">
     <table>
       <tr><th>Event</th><th>Date</th><th>Duration</th><th>Departments</th><th>Sections</th><th></th></tr>
-      ${DB.events.map(e=>`<tr><td>${e.name}</td><td>${e.date||'—'}</td><td>${e.sessionType==='am'?'AM only':e.sessionType==='pm'?'PM only':'Whole day'}</td><td>${e.departments.map(dp=>`<span class="badge-dept" style="margin-right:4px;">${dp}</span>`).join('')}</td><td>${e.sections && e.sections.length ? e.sections.map(s=>`<span class="pill gold" style="margin-right:4px;">${s}</span>`).join('') : '<span class="pill green">All sections</span>'}</td><td><button class="btn-danger" data-del-event="${e.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="6" class="empty">No events yet.</td></tr>`}
+      ${DB.events.map(e=>`<tr><td>${e.name}</td><td>${e.date||'—'}</td><td>${e.sessionType==='am'?'AM only':e.sessionType==='pm'?'PM only':'Whole day'}</td><td>${e.departments.map(dp=>`<span class="badge-dept" style="margin-right:4px;">${dp}</span>`).join('')}</td><td>${e.sections && e.sections.length ? e.sections.map(s=>`<span class="pill gold" style="margin-right:4px;">${s}</span>`).join('') : '<span class="pill green">All sections</span>'}</td><td><button class="btn-ghost" data-edit-event="${e.id}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-del-event="${e.id}">Remove</button></td></tr>`).join('') || `<tr><td colspan="6" class="empty">No events yet.</td></tr>`}
     </table>
-  </div>`;
+  </div>
+  ${modalOpen ? renderEventModal() : ''}
+  `;
 }
 function renderAdminDepartments(){
   const deps = DB.departments;
@@ -1553,16 +1570,55 @@ function attachAdminHandlers(){
       render();
     };
   });
-  const createEv = document.getElementById('create-event-btn');
-  if(createEv) createEv.onclick = async ()=>{
-    const d = state.newEventDraft;
-    if(!d.name || d.departments.length===0){ state.err='Give the event a name and at least one department.'; render(); return; }
-    DB.events.push({id: uid('evt'), name:d.name, date:d.date, departments:[...d.departments], sessionType: d.sessionType || 'full', sections:[...d.sections]});
-    await saveKey('events', DB.events);
+  const openAddEvent = document.getElementById('open-add-event-btn');
+  if(openAddEvent) openAddEvent.onclick = ()=>{
+    state.eventModalOpen = true;
     state.newEventDraft = {name:'', date:'', departments:[...DB.departments], sessionType:'full', sections:[]};
     state.err='';
     render();
   };
+  const closeEventModal = ()=>{
+    state.eventModalOpen = false;
+    state.editingEventId = null;
+    state.newEventDraft = {name:'', date:'', departments:[...DB.departments], sessionType:'full', sections:[]};
+    state.err='';
+    render();
+  };
+  const closeEventBtn1 = document.getElementById('close-event-modal-btn');
+  if(closeEventBtn1) closeEventBtn1.onclick = closeEventModal;
+  const closeEventBtn2 = document.getElementById('close-event-modal-btn-2');
+  if(closeEventBtn2) closeEventBtn2.onclick = closeEventModal;
+  const eventModalOverlay = document.getElementById('event-modal-overlay');
+  if(eventModalOverlay) eventModalOverlay.onclick = (e)=>{ if(e.target === eventModalOverlay) closeEventModal(); };
+  const createEv = document.getElementById('create-event-btn');
+  if(createEv) createEv.onclick = async ()=>{
+    const d = state.newEventDraft;
+    const editing = state.editingEventId;
+    if(!d.name || d.departments.length===0){ state.err='Give the event a name and at least one department.'; render(); return; }
+    if(editing){
+      const idx = DB.events.findIndex(e=>e.id===editing);
+      if(idx===-1){ state.err='This event no longer exists.'; state.editingEventId=null; render(); return; }
+      DB.events[idx] = {...DB.events[idx], name:d.name, date:d.date, departments:[...d.departments], sessionType: d.sessionType || 'full', sections:[...d.sections]};
+    } else {
+      DB.events.push({id: uid('evt'), name:d.name, date:d.date, departments:[...d.departments], sessionType: d.sessionType || 'full', sections:[...d.sections]});
+    }
+    await saveKey('events', DB.events);
+    state.eventModalOpen = false;
+    state.editingEventId = null;
+    state.newEventDraft = {name:'', date:'', departments:[...DB.departments], sessionType:'full', sections:[]};
+    state.err='';
+    render();
+  };
+  document.querySelectorAll('[data-edit-event]').forEach(el=>{
+    el.onclick = ()=>{
+      const ev = DB.events.find(e=>e.id===el.dataset.editEvent);
+      if(!ev) return;
+      state.editingEventId = ev.id;
+      state.newEventDraft = {name:ev.name, date:ev.date||'', departments:[...ev.departments], sessionType: ev.sessionType || 'full', sections:[...(ev.sections||[])]};
+      state.err='';
+      render();
+    };
+  });
   document.querySelectorAll('[data-del-event]').forEach(el=>{
     el.onclick = async ()=>{
       DB.events = DB.events.filter(e=>e.id!==el.dataset.delEvent);
