@@ -19,7 +19,7 @@ try{
 }
 
 /* ---------------- storage helpers ---------------- */
-const EMPTY_DEFAULTS = { users:{}, events:[], tokens:{}, attendance:[], departments:[], sections:{}, adminLog:[] };
+const EMPTY_DEFAULTS = { users:{}, events:[], tokens:{}, attendance:[], departments:[], sections:{}, adminLog:[], sheetSettings:null };
 async function loadAll(){
   if(!SUPABASE_CONFIGURED) return { ...EMPTY_DEFAULTS };
   const out = { ...EMPTY_DEFAULTS };
@@ -174,7 +174,7 @@ const TOKEN_TTL_MS = 25000; // grace window past a refresh before a code stops w
 let qrRotateTimer = null;
 let lastRenderedQrToken = null;
 
-let DB = { users:{}, events:[], tokens:{}, attendance:[], departments:[], sections:{}, adminLog:[] };
+let DB = { users:{}, events:[], tokens:{}, attendance:[], departments:[], sections:{}, adminLog:[], sheetSettings:null };
 let state = {
   route:'login',           // login | student | officer | admin
   authTab:'student',       // student | officer | admin
@@ -204,6 +204,8 @@ let state = {
   adminFilterEvent:'all',
   logPage:1,
   analyticsPage:1,
+  sheetSettingsDraft:null,
+  sheetDraft:{title:'', date:'', time:'', venue:'', rows:30},
   adminFilterDept:'all',
   adminFilterScope:'all',
   profileMsg:'',
@@ -225,6 +227,20 @@ let state = {
   lastOfficerResetPassword:null
 };
 
+const DEFAULT_SHEET_SETTINGS = {
+  leftLogo: '', rightLogo: '',
+  university: 'OCCIDENTAL MINDORO STATE UNIVERSITY',
+  address: 'Lubang, Occidental Mindoro',
+  website: 'www.omsc.edu.ph',
+  email: 'cd.lubang@omsc.edu.ph',
+  telfax: '(043) 457-0231',
+  collegeUnit: '( Name of College/Unit )',
+  refNo: 'OMSU-REC-OFC-03',
+  effectivityDate: '',
+  revisionNo: '',
+  footerLabel: 'Certified True and Correct:',
+  signatureLabel: 'Signature Over Printed Name'
+};
 async function seedIfEmpty(){
   DB = await loadAll();
   if(!DB.sections) DB.sections = {};
@@ -239,8 +255,10 @@ async function seedIfEmpty(){
   }
   if(usersChanged){ await saveKey('users', DB.users); }
   if(deptsChanged){ await saveKey('departments', DB.departments); }
+  if(!DB.sheetSettings) DB.sheetSettings = { ...DEFAULT_SHEET_SETTINGS };
   state.newEventDraft.departments = [...DB.departments];
   state.newOfficerDraft.department = DB.departments[0];
+  state.sheetSettingsDraft = { ...DEFAULT_SHEET_SETTINGS, ...DB.sheetSettings };
 }
 function sectionsFor(dept){ return DB.sections[dept] || []; }
 function sectionOptions(dept, selected){
@@ -440,7 +458,7 @@ function renderShell(innerHtml){
   const items = role==='student' ? [['checkin','Check In'],['history','My Attendance'],['profile','My Profile']]
               : role==='officer' ? [['generate','Generate QR'],['attendees','Attendees'],['profile','My Profile']]
               : role==='ssg' ? [['generate','Generate QR'],['attendees','Attendees'],['profile','My Profile']]
-              : [['overview','Overview'],['analytics','Analytics'],['events','Manage Events'],['departments','Departments'],['students','Manage Students'],['officers','Manage Officers'],['records','All Records'],['log','Activity Log'],['profile','My Profile']];
+              : [['overview','Overview'],['analytics','Analytics'],['events','Manage Events'],['departments','Departments'],['students','Manage Students'],['officers','Manage Officers'],['records','All Records'],['sheet','Attendance Sheet'],['log','Activity Log'],['profile','My Profile']];
   const sub = role==='student' ? state.studentSubRoute : role==='officer' ? state.officerSubRoute : role==='ssg' ? state.ssgSubRoute : state.adminSubRoute;
   const roleLabel = role==='admin'?'System Admin':role==='officer'?(u.section?'Section Officer':'Department Officer'):role==='ssg'?'SSG Officer':'Student';
   return `
@@ -1267,6 +1285,7 @@ function renderAdmin(){
   if(state.adminSubRoute==='officers') return renderAdminOfficers();
   if(state.adminSubRoute==='records') return renderAdminRecords();
   if(state.adminSubRoute==='log') return renderAdminLog();
+  if(state.adminSubRoute==='sheet') return renderAdminSheet();
   return renderProfile();
 }
 function renderAdminOverview(){
@@ -1733,6 +1752,100 @@ function renderAdminRecords(){
   ${renderStudentAttendanceModal()}
   `;
 }
+function renderAdminSheet(){
+  const s = state.sheetSettingsDraft || DEFAULT_SHEET_SETTINGS;
+  const d = state.sheetDraft;
+  const rowCount = Math.max(1, Math.min(60, parseInt(d.rows,10) || 30));
+  const rows = Array.from({length: rowCount}, (_, i) => i+1);
+  return `
+  <div class="page-head"><h1>Attendance Sheet</h1><p>A printable, editable paper attendance sheet — for meetings, seminars, or events that need a signed hard copy.</p></div>
+
+  <div class="card" style="max-width:640px; margin-bottom:14px;">
+    <div class="section-title" style="margin-top:0;">Header &amp; footer (saved for future sheets)</div>
+    <div class="row">
+      <div class="field" style="flex:1;">
+        <label>Left logo</label>
+        ${s.leftLogo ? `<img src="${s.leftLogo}" style="height:48px; display:block; margin-bottom:6px;">` : ''}
+        <input type="file" id="left-logo-input" accept="image/*">
+        ${s.leftLogo ? `<button class="btn-ghost" id="remove-left-logo-btn" style="margin-top:6px;">Remove</button>` : ''}
+      </div>
+      <div class="field" style="flex:1;">
+        <label>Right logo</label>
+        ${s.rightLogo ? `<img src="${s.rightLogo}" style="height:48px; display:block; margin-bottom:6px;">` : ''}
+        <input type="file" id="right-logo-input" accept="image/*">
+        ${s.rightLogo ? `<button class="btn-ghost" id="remove-right-logo-btn" style="margin-top:6px;">Remove</button>` : ''}
+      </div>
+    </div>
+    <div class="field"><label>University / institution name</label><input id="sh-university" value="${s.university}"></div>
+    <div class="field"><label>Address</label><input id="sh-address" value="${s.address}"></div>
+    <div class="row">
+      <div class="field" style="flex:1;"><label>Website</label><input id="sh-website" value="${s.website}"></div>
+      <div class="field" style="flex:1;"><label>Email</label><input id="sh-email" value="${s.email}"></div>
+    </div>
+    <div class="field"><label>Tel/Fax</label><input id="sh-telfax" value="${s.telfax}"></div>
+    <div class="field"><label>College / unit name</label><input id="sh-collegeunit" value="${s.collegeUnit}" placeholder="( Name of College/Unit )"></div>
+    <div class="row">
+      <div class="field" style="flex:1;"><label>Reference No.</label><input id="sh-refno" value="${s.refNo}"></div>
+      <div class="field" style="flex:1;"><label>Effectivity date</label><input id="sh-effdate" value="${s.effectivityDate}" placeholder="e.g. June 29, 2026"></div>
+      <div class="field" style="flex:1;"><label>Revision No.</label><input id="sh-revno" value="${s.revisionNo}"></div>
+    </div>
+    <div class="field"><label>Footer label</label><input id="sh-footerlabel" value="${s.footerLabel}"></div>
+    <div class="field"><label>Signature line label</label><input id="sh-siglabel" value="${s.signatureLabel}"></div>
+    ${state.err ? `<div class="err">${state.err}</div>` : ''}
+    <button class="btn-primary" style="width:100%;" id="save-sheet-settings-btn">Save header &amp; footer</button>
+  </div>
+
+  <div class="card" style="max-width:640px; margin-bottom:14px;">
+    <div class="section-title" style="margin-top:0;">This sheet's details</div>
+    <div class="field"><label>Nature/Title of Meeting/Activity/Seminar</label><input id="sh-title" value="${d.title}"></div>
+    <div class="row">
+      <div class="field" style="flex:1;"><label>Date</label><input id="sh-date" value="${d.date}"></div>
+      <div class="field" style="flex:1;"><label>Time</label><input id="sh-time" value="${d.time}"></div>
+    </div>
+    <div class="field"><label>Venue</label><input id="sh-venue" value="${d.venue}"></div>
+    <div class="field"><label>Number of rows</label><input id="sh-rows" type="number" min="1" max="60" value="${rowCount}"></div>
+    <button class="btn-gold" style="width:100%;" id="print-sheet-btn">Print / Save as PDF</button>
+    <p class="hint">Opens your browser's print dialog — choose "Save as PDF" there if you want a digital copy instead of printing.</p>
+  </div>
+
+  <div class="section-title">Preview</div>
+  <div class="card" style="overflow-x:auto;">
+    <div class="print-sheet" id="print-sheet">
+      <div class="ps-topline"><span>Reference No.: ${s.refNo}</span><span>Effectivity Date: ${s.effectivityDate}</span><span>Revision No. ${s.revisionNo}</span></div>
+      <div class="ps-header">
+        <div class="ps-logo">${s.leftLogo ? `<img src="${s.leftLogo}">` : ''}</div>
+        <div class="ps-headtext">
+          <div class="ps-republic">Republic of the Philippines</div>
+          <div class="ps-university">${s.university}</div>
+          <div class="ps-address">${s.address}</div>
+          <div class="ps-contact">Website: ${s.website} &nbsp; Email address: ${s.email}</div>
+          <div class="ps-contact">Tele/Fax: ${s.telfax}</div>
+        </div>
+        <div class="ps-logo">${s.rightLogo ? `<img src="${s.rightLogo}">` : ''}</div>
+      </div>
+      <div class="ps-collegeunit">${s.collegeUnit}</div>
+      <div class="ps-title">COLLEGE/OFFICE ACTIVITY/SEMINAR ATTENDANCE SHEET</div>
+      <div class="ps-fields">
+        <div>Nature/Title of Meeting/Activity/Seminar: <span class="ps-fill">${d.title}</span></div>
+        <div class="ps-fields-row">
+          <span>Date: <span class="ps-fill short">${d.date}</span></span>
+          <span>Time: <span class="ps-fill short">${d.time}</span></span>
+          <span>Venue: <span class="ps-fill">${d.venue}</span></span>
+        </div>
+      </div>
+      <table class="ps-table">
+        <tr><th style="width:36px;"></th><th>Name</th><th style="width:60px;">Sex</th><th style="width:110px;">Position/Rank</th><th style="width:100px;">Office</th><th style="width:130px;">Signature</th></tr>
+        ${rows.map(n=>`<tr><td>${n}.</td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')}
+      </table>
+      <div class="ps-footer">
+        <div>${s.footerLabel}</div>
+        <div class="ps-sigline"></div>
+        <div class="ps-siglabel">${s.signatureLabel}</div>
+      </div>
+    </div>
+  </div>
+  `;
+}
 function renderAdminLog(){
   const log = DB.adminLog || [];
   const { items: pageEntries, totalPages, page } = paginate(log, state.logPage, ADMIN_PAGE_SIZE);
@@ -2160,6 +2273,53 @@ function attachAdminHandlers(){
   if(analyticsPrevBtn) analyticsPrevBtn.onclick = ()=>{ state.analyticsPage = Math.max(1, (state.analyticsPage||1)-1); render(); };
   const analyticsNextBtn = document.getElementById('analytics-next-btn');
   if(analyticsNextBtn) analyticsNextBtn.onclick = ()=>{ state.analyticsPage = (state.analyticsPage||1)+1; render(); };
+
+  /* ---------------- Attendance Sheet ---------------- */
+  function readImageAsDataUrl(file, cb){
+    if(!file) return;
+    if(file.size > 1.5*1024*1024){ state.err = 'That image is a bit large — please use one under 1.5MB.'; render(); return; }
+    const reader = new FileReader();
+    reader.onload = ()=>{ cb(reader.result); render(); };
+    reader.readAsDataURL(file);
+  }
+  const leftLogoInput = document.getElementById('left-logo-input');
+  if(leftLogoInput) leftLogoInput.onchange = ()=>{
+    readImageAsDataUrl(leftLogoInput.files[0], (dataUrl)=>{ state.sheetSettingsDraft.leftLogo = dataUrl; });
+  };
+  const rightLogoInput = document.getElementById('right-logo-input');
+  if(rightLogoInput) rightLogoInput.onchange = ()=>{
+    readImageAsDataUrl(rightLogoInput.files[0], (dataUrl)=>{ state.sheetSettingsDraft.rightLogo = dataUrl; });
+  };
+  const removeLeftLogo = document.getElementById('remove-left-logo-btn');
+  if(removeLeftLogo) removeLeftLogo.onclick = ()=>{ state.sheetSettingsDraft.leftLogo = ''; render(); };
+  const removeRightLogo = document.getElementById('remove-right-logo-btn');
+  if(removeRightLogo) removeRightLogo.onclick = ()=>{ state.sheetSettingsDraft.rightLogo = ''; render(); };
+  [
+    ['sh-university','university'], ['sh-address','address'], ['sh-website','website'],
+    ['sh-email','email'], ['sh-telfax','telfax'], ['sh-collegeunit','collegeUnit'],
+    ['sh-refno','refNo'], ['sh-effdate','effectivityDate'], ['sh-revno','revisionNo'],
+    ['sh-footerlabel','footerLabel'], ['sh-siglabel','signatureLabel']
+  ].forEach(([id,field])=>{
+    const el = document.getElementById(id);
+    if(el) el.oninput = ()=>{ state.sheetSettingsDraft[field] = el.value; reRenderPreservingFocus(); };
+  });
+  [
+    ['sh-title','title'], ['sh-date','date'], ['sh-time','time'], ['sh-venue','venue'], ['sh-rows','rows']
+  ].forEach(([id,field])=>{
+    const el = document.getElementById(id);
+    if(el) el.oninput = ()=>{ state.sheetDraft[field] = el.value; reRenderPreservingFocus(); };
+  });
+  const saveSheetSettingsBtn = document.getElementById('save-sheet-settings-btn');
+  if(saveSheetSettingsBtn) saveSheetSettingsBtn.onclick = async ()=>{
+    DB.sheetSettings = { ...state.sheetSettingsDraft };
+    await saveKey('sheetSettings', DB.sheetSettings);
+    await logAdminAction('Updated attendance sheet header/footer', '');
+    state.err = '';
+    render();
+  };
+  const printSheetBtn = document.getElementById('print-sheet-btn');
+  if(printSheetBtn) printSheetBtn.onclick = ()=>{ window.print(); };
+
   if(state.adminSubRoute==='profile') attachProfileHandlers();
   wirePasswordToggles();
 }
