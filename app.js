@@ -228,7 +228,7 @@ let state = {
 };
 
 const DEFAULT_SHEET_SETTINGS = {
-  leftLogo: '', rightLogo: '',
+  leftLogo: '', rightLogo: '', footerLogo: '',
   university: 'OCCIDENTAL MINDORO STATE UNIVERSITY',
   address: 'Lubang, Occidental Mindoro',
   website: 'www.omsc.edu.ph',
@@ -1761,7 +1761,7 @@ function renderAdminSheet(){
   <div class="page-head"><h1>Attendance Sheet</h1><p>A printable, editable paper attendance sheet — for meetings, seminars, or events that need a signed hard copy.</p></div>
 
   <div class="card" style="max-width:640px; margin-bottom:14px;">
-    <div class="section-title" style="margin-top:0;">Header &amp; footer (saved for future sheets)</div>
+    <div class="section-title" style="margin-top:0;">Header (saved for future sheets)</div>
     <div class="row">
       <div class="field" style="flex:1;">
         <label>Left logo</label>
@@ -1788,6 +1788,17 @@ function renderAdminSheet(){
       <div class="field" style="flex:1;"><label>Reference No.</label><input id="sh-refno" value="${s.refNo}"></div>
       <div class="field" style="flex:1;"><label>Effectivity date</label><input id="sh-effdate" value="${s.effectivityDate}" placeholder="e.g. June 29, 2026"></div>
       <div class="field" style="flex:1;"><label>Revision No.</label><input id="sh-revno" value="${s.revisionNo}"></div>
+    </div>
+  </div>
+
+  <div class="card" style="max-width:640px; margin-bottom:14px;">
+    <div class="section-title" style="margin-top:0;">Footer (saved for future sheets)</div>
+    <div class="field">
+      <label>Footer logo</label>
+      <p class="hint" style="margin-top:-4px;">A separate logo from the header — e.g. an ISO certification mark or similar badge. Upload your own image; nothing is pre-filled here.</p>
+      ${s.footerLogo ? `<img src="${s.footerLogo}" style="height:56px; display:block; margin-bottom:6px;">` : ''}
+      <input type="file" id="footer-logo-input" accept="image/*">
+      ${s.footerLogo ? `<button class="btn-ghost" id="remove-footer-logo-btn" style="margin-top:6px;">Remove</button>` : ''}
     </div>
     <div class="field"><label>Footer label</label><input id="sh-footerlabel" value="${s.footerLabel}"></div>
     <div class="field"><label>Signature line label</label><input id="sh-siglabel" value="${s.signatureLabel}"></div>
@@ -1838,9 +1849,14 @@ function renderAdminSheet(){
         ${rows.map(n=>`<tr><td>${n}.</td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')}
       </table>
       <div class="ps-footer">
-        <div>${s.footerLabel}</div>
-        <div class="ps-sigline"></div>
-        <div class="ps-siglabel">${s.signatureLabel}</div>
+        <div class="ps-footer-row">
+          <div class="ps-sig-block">
+            <div>${s.footerLabel}</div>
+            <div class="ps-sigline"></div>
+            <div class="ps-siglabel">${s.signatureLabel}</div>
+          </div>
+          ${s.footerLogo ? `<div class="ps-footer-logo"><img src="${s.footerLogo}"></div>` : ''}
+        </div>
       </div>
     </div>
   </div>
@@ -2294,6 +2310,12 @@ function attachAdminHandlers(){
   if(removeLeftLogo) removeLeftLogo.onclick = ()=>{ state.sheetSettingsDraft.leftLogo = ''; render(); };
   const removeRightLogo = document.getElementById('remove-right-logo-btn');
   if(removeRightLogo) removeRightLogo.onclick = ()=>{ state.sheetSettingsDraft.rightLogo = ''; render(); };
+  const footerLogoInput = document.getElementById('footer-logo-input');
+  if(footerLogoInput) footerLogoInput.onchange = ()=>{
+    readImageAsDataUrl(footerLogoInput.files[0], (dataUrl)=>{ state.sheetSettingsDraft.footerLogo = dataUrl; });
+  };
+  const removeFooterLogo = document.getElementById('remove-footer-logo-btn');
+  if(removeFooterLogo) removeFooterLogo.onclick = ()=>{ state.sheetSettingsDraft.footerLogo = ''; render(); };
   [
     ['sh-university','university'], ['sh-address','address'], ['sh-website','website'],
     ['sh-email','email'], ['sh-telfax','telfax'], ['sh-collegeunit','collegeUnit'],
