@@ -413,8 +413,8 @@
   }
   .ps-topline{display:flex; justify-content:space-between; font-size:10px; margin-bottom:14px; gap:12px;}
   .ps-header{display:flex; align-items:center; gap:14px;}
-  .ps-logo{width:74px; flex-shrink:0; display:flex; align-items:center; justify-content:center;}
-  .ps-logo img{max-width:74px; max-height:74px; object-fit:contain;}
+  .ps-logo{width:88px; flex-shrink:0; display:flex; align-items:center; justify-content:center;}
+  .ps-logo img{max-width:88px; max-height:88px; object-fit:contain;}
   .ps-headtext{flex:1; text-align:center;}
   .ps-republic{font-size:12px;}
   .ps-university{font-size:15px; font-weight:700; margin:2px 0;}
@@ -435,8 +435,8 @@
   .ps-footer{margin-top:22px; font-size:12.5px;}
   .ps-footer-row{display:block;}
   .ps-sig-block{}
-  .ps-footer-logo{display:flex; justify-content:flex-end; margin-top:36px;}
-  .ps-footer-logo img{max-width:90px; max-height:90px; object-fit:contain;}
+  .ps-footer-logo{display:flex; justify-content:flex-end; margin-top:18px;}
+  .ps-footer-logo img{max-width:60px; max-height:60px; object-fit:contain;}
   .ps-sigline{border-bottom:1px solid #000; width:240px; margin-top:26px;}
   .ps-siglabel{font-size:11px; margin-top:2px;}
 
