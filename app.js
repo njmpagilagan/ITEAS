@@ -1835,7 +1835,7 @@ function renderAdminSheet(){
   </div>
 
   <div class="section-title">Preview</div>
-  <div class="card" style="overflow-x:auto;">
+  <div class="card" style="overflow-x:auto; background:var(--bg); padding:28px; display:flex; justify-content:center;">
     <div class="print-sheet" id="print-sheet">
       <div class="ps-topline"><span>Reference No.: ${s.refNo}</span><span>Effectivity Date: ${s.effectivityDate}</span><span>Revision No. ${s.revisionNo}</span></div>
       <div class="ps-header">
