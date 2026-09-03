@@ -205,6 +205,7 @@ let state = {
   logPage:1,
   analyticsPage:1,
   sheetSettingsDraft:null,
+  sheetSettingsModalOpen:false,
   sheetDraft:{title:'', date:'', time:'', venue:'', rows:30},
   adminFilterDept:'all',
   adminFilterScope:'all',
@@ -494,7 +495,7 @@ function attachShellHandlers(){
         state.ssgSubRoute = sub;
       }
       if(role==='admin'){ state.adminSubRoute = sub; }
-      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.lastOfficerResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null; state.recordsShown=false; state.showAttendanceStudentId=null; state.attendeesPage=1; state.eventModalOpen=false; state.editingEventId=null;
+      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.lastOfficerResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null; state.recordsShown=false; state.showAttendanceStudentId=null; state.attendeesPage=1; state.eventModalOpen=false; state.editingEventId=null; state.sheetSettingsModalOpen=false;
       // an account's own department/section may have been changed by admin since login —
       // always refresh it so a stale, already-logged-in session doesn't keep enforcing old rules
       if(role==='officer' || role==='ssg' || role==='student'){
@@ -1752,69 +1753,83 @@ function renderAdminRecords(){
   ${renderStudentAttendanceModal()}
   `;
 }
+function renderSheetSettingsModal(){
+  const s = state.sheetSettingsDraft || DEFAULT_SHEET_SETTINGS;
+  return `
+  <div class="modal-overlay" id="sheet-settings-modal-overlay">
+    <div class="modal-card" style="max-width:640px;">
+      <button class="close-x" id="close-sheet-settings-btn">&times;</button>
+      <h3 style="margin-top:0;">Sheet header &amp; footer</h3>
+      <p class="hint" style="margin-top:-6px;">Saved once and reused for every sheet you print — you won't need to re-enter this.</p>
+      <div class="section-title" style="margin-top:14px;">Header</div>
+      <div class="row">
+        <div class="field" style="flex:1;">
+          <label>Left logo</label>
+          ${s.leftLogo ? `<img src="${s.leftLogo}" style="height:44px; display:block; margin-bottom:6px;">` : ''}
+          <input type="file" id="left-logo-input" accept="image/*">
+          ${s.leftLogo ? `<button class="btn-ghost" id="remove-left-logo-btn" style="margin-top:6px;">Remove</button>` : ''}
+        </div>
+        <div class="field" style="flex:1;">
+          <label>Right logo</label>
+          ${s.rightLogo ? `<img src="${s.rightLogo}" style="height:44px; display:block; margin-bottom:6px;">` : ''}
+          <input type="file" id="right-logo-input" accept="image/*">
+          ${s.rightLogo ? `<button class="btn-ghost" id="remove-right-logo-btn" style="margin-top:6px;">Remove</button>` : ''}
+        </div>
+      </div>
+      <div class="row">
+        <div class="field" style="flex:1;"><label>University / institution name</label><input id="sh-university" value="${s.university}"></div>
+      </div>
+      <div class="field"><label>Address</label><input id="sh-address" value="${s.address}"></div>
+      <div class="row">
+        <div class="field" style="flex:1;"><label>Website</label><input id="sh-website" value="${s.website}"></div>
+        <div class="field" style="flex:1;"><label>Email</label><input id="sh-email" value="${s.email}"></div>
+        <div class="field" style="flex:1;"><label>Tel/Fax</label><input id="sh-telfax" value="${s.telfax}"></div>
+      </div>
+      <div class="field"><label>College / unit name</label><input id="sh-collegeunit" value="${s.collegeUnit}" placeholder="( Name of College/Unit )"></div>
+      <div class="row">
+        <div class="field" style="flex:1;"><label>Reference No.</label><input id="sh-refno" value="${s.refNo}"></div>
+        <div class="field" style="flex:1;"><label>Effectivity date</label><input id="sh-effdate" value="${s.effectivityDate}" placeholder="e.g. June 29, 2026"></div>
+        <div class="field" style="flex:1;"><label>Revision No.</label><input id="sh-revno" value="${s.revisionNo}"></div>
+      </div>
+      <div class="section-title">Footer</div>
+      <div class="field">
+        <label>Footer logo</label>
+        <p class="hint" style="margin-top:-4px;">A separate logo from the header — e.g. an ISO certification mark or similar badge.</p>
+        ${s.footerLogo ? `<img src="${s.footerLogo}" style="height:50px; display:block; margin-bottom:6px;">` : ''}
+        <input type="file" id="footer-logo-input" accept="image/*">
+        ${s.footerLogo ? `<button class="btn-ghost" id="remove-footer-logo-btn" style="margin-top:6px;">Remove</button>` : ''}
+      </div>
+      <div class="row">
+        <div class="field" style="flex:1;"><label>Footer label</label><input id="sh-footerlabel" value="${s.footerLabel}"></div>
+        <div class="field" style="flex:1;"><label>Signature line label</label><input id="sh-siglabel" value="${s.signatureLabel}"></div>
+      </div>
+      ${state.err ? `<div class="err">${state.err}</div>` : ''}
+      <button class="btn-primary" style="width:100%;" id="save-sheet-settings-btn">Save header &amp; footer</button>
+      <button class="btn-ghost" style="width:100%; margin-top:8px;" id="close-sheet-settings-btn-2">Close</button>
+    </div>
+  </div>`;
+}
 function renderAdminSheet(){
   const s = state.sheetSettingsDraft || DEFAULT_SHEET_SETTINGS;
   const d = state.sheetDraft;
   const rowCount = Math.max(1, Math.min(60, parseInt(d.rows,10) || 30));
   const rows = Array.from({length: rowCount}, (_, i) => i+1);
   return `
-  <div class="page-head"><h1>Attendance Sheet</h1><p>A printable, editable paper attendance sheet — for meetings, seminars, or events that need a signed hard copy.</p></div>
-
-  <div class="card" style="max-width:640px; margin-bottom:14px;">
-    <div class="section-title" style="margin-top:0;">Header (saved for future sheets)</div>
-    <div class="row">
-      <div class="field" style="flex:1;">
-        <label>Left logo</label>
-        ${s.leftLogo ? `<img src="${s.leftLogo}" style="height:48px; display:block; margin-bottom:6px;">` : ''}
-        <input type="file" id="left-logo-input" accept="image/*">
-        ${s.leftLogo ? `<button class="btn-ghost" id="remove-left-logo-btn" style="margin-top:6px;">Remove</button>` : ''}
-      </div>
-      <div class="field" style="flex:1;">
-        <label>Right logo</label>
-        ${s.rightLogo ? `<img src="${s.rightLogo}" style="height:48px; display:block; margin-bottom:6px;">` : ''}
-        <input type="file" id="right-logo-input" accept="image/*">
-        ${s.rightLogo ? `<button class="btn-ghost" id="remove-right-logo-btn" style="margin-top:6px;">Remove</button>` : ''}
-      </div>
-    </div>
-    <div class="field"><label>University / institution name</label><input id="sh-university" value="${s.university}"></div>
-    <div class="field"><label>Address</label><input id="sh-address" value="${s.address}"></div>
-    <div class="row">
-      <div class="field" style="flex:1;"><label>Website</label><input id="sh-website" value="${s.website}"></div>
-      <div class="field" style="flex:1;"><label>Email</label><input id="sh-email" value="${s.email}"></div>
-    </div>
-    <div class="field"><label>Tel/Fax</label><input id="sh-telfax" value="${s.telfax}"></div>
-    <div class="field"><label>College / unit name</label><input id="sh-collegeunit" value="${s.collegeUnit}" placeholder="( Name of College/Unit )"></div>
-    <div class="row">
-      <div class="field" style="flex:1;"><label>Reference No.</label><input id="sh-refno" value="${s.refNo}"></div>
-      <div class="field" style="flex:1;"><label>Effectivity date</label><input id="sh-effdate" value="${s.effectivityDate}" placeholder="e.g. June 29, 2026"></div>
-      <div class="field" style="flex:1;"><label>Revision No.</label><input id="sh-revno" value="${s.revisionNo}"></div>
-    </div>
+  <div class="page-head-row">
+    <div class="page-head" style="margin-bottom:0;"><h1>Attendance Sheet</h1><p>A printable, editable paper attendance sheet — for meetings, seminars, or events that need a signed hard copy.</p></div>
+    <button class="btn-ghost" id="open-sheet-settings-btn">Header &amp; footer settings</button>
   </div>
 
   <div class="card" style="max-width:640px; margin-bottom:14px;">
-    <div class="section-title" style="margin-top:0;">Footer (saved for future sheets)</div>
-    <div class="field">
-      <label>Footer logo</label>
-      <p class="hint" style="margin-top:-4px;">A separate logo from the header — e.g. an ISO certification mark or similar badge. Upload your own image; nothing is pre-filled here.</p>
-      ${s.footerLogo ? `<img src="${s.footerLogo}" style="height:56px; display:block; margin-bottom:6px;">` : ''}
-      <input type="file" id="footer-logo-input" accept="image/*">
-      ${s.footerLogo ? `<button class="btn-ghost" id="remove-footer-logo-btn" style="margin-top:6px;">Remove</button>` : ''}
+    <div class="row">
+      <div class="field" style="flex:2;"><label>Nature/Title of Meeting/Activity/Seminar</label><input id="sh-title" value="${d.title}"></div>
+      <div class="field" style="flex:1;"><label>Rows</label><input id="sh-rows" type="number" min="1" max="60" value="${rowCount}"></div>
     </div>
-    <div class="field"><label>Footer label</label><input id="sh-footerlabel" value="${s.footerLabel}"></div>
-    <div class="field"><label>Signature line label</label><input id="sh-siglabel" value="${s.signatureLabel}"></div>
-    ${state.err ? `<div class="err">${state.err}</div>` : ''}
-    <button class="btn-primary" style="width:100%;" id="save-sheet-settings-btn">Save header &amp; footer</button>
-  </div>
-
-  <div class="card" style="max-width:640px; margin-bottom:14px;">
-    <div class="section-title" style="margin-top:0;">This sheet's details</div>
-    <div class="field"><label>Nature/Title of Meeting/Activity/Seminar</label><input id="sh-title" value="${d.title}"></div>
     <div class="row">
       <div class="field" style="flex:1;"><label>Date</label><input id="sh-date" value="${d.date}"></div>
       <div class="field" style="flex:1;"><label>Time</label><input id="sh-time" value="${d.time}"></div>
+      <div class="field" style="flex:1;"><label>Venue</label><input id="sh-venue" value="${d.venue}"></div>
     </div>
-    <div class="field"><label>Venue</label><input id="sh-venue" value="${d.venue}"></div>
-    <div class="field"><label>Number of rows</label><input id="sh-rows" type="number" min="1" max="60" value="${rowCount}"></div>
     <button class="btn-gold" style="width:100%;" id="print-sheet-btn">Print / Save as PDF</button>
     <p class="hint">Opens your browser's print dialog — choose "Save as PDF" there if you want a digital copy instead of printing.</p>
   </div>
@@ -1860,6 +1875,7 @@ function renderAdminSheet(){
       </div>
     </div>
   </div>
+  ${state.sheetSettingsModalOpen ? renderSheetSettingsModal() : ''}
   `;
 }
 function renderAdminLog(){
@@ -2331,11 +2347,21 @@ function attachAdminHandlers(){
     const el = document.getElementById(id);
     if(el) el.oninput = ()=>{ state.sheetDraft[field] = el.value; reRenderPreservingFocus(); };
   });
+  const openSheetSettingsBtn = document.getElementById('open-sheet-settings-btn');
+  if(openSheetSettingsBtn) openSheetSettingsBtn.onclick = ()=>{ state.sheetSettingsModalOpen = true; state.err=''; render(); };
+  const closeSheetSettings = ()=>{ state.sheetSettingsModalOpen = false; state.err=''; render(); };
+  const closeSheetBtn1 = document.getElementById('close-sheet-settings-btn');
+  if(closeSheetBtn1) closeSheetBtn1.onclick = closeSheetSettings;
+  const closeSheetBtn2 = document.getElementById('close-sheet-settings-btn-2');
+  if(closeSheetBtn2) closeSheetBtn2.onclick = closeSheetSettings;
+  const sheetModalOverlay = document.getElementById('sheet-settings-modal-overlay');
+  if(sheetModalOverlay) sheetModalOverlay.onclick = (e)=>{ if(e.target === sheetModalOverlay) closeSheetSettings(); };
   const saveSheetSettingsBtn = document.getElementById('save-sheet-settings-btn');
   if(saveSheetSettingsBtn) saveSheetSettingsBtn.onclick = async ()=>{
     DB.sheetSettings = { ...state.sheetSettingsDraft };
     await saveKey('sheetSettings', DB.sheetSettings);
     await logAdminAction('Updated attendance sheet header/footer', '');
+    state.sheetSettingsModalOpen = false;
     state.err = '';
     render();
   };
