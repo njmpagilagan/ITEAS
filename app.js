@@ -223,6 +223,7 @@ let state = {
   recordsShown:false,
   showAttendanceStudentId:null,
   recordsPage:1,
+  exportModalOpen:false,
   attendeesPage:1,
   lastResetPassword:null,
   lastOfficerResetPassword:null
@@ -495,7 +496,7 @@ function attachShellHandlers(){
         state.ssgSubRoute = sub;
       }
       if(role==='admin'){ state.adminSubRoute = sub; }
-      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.lastOfficerResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null; state.recordsShown=false; state.showAttendanceStudentId=null; state.attendeesPage=1; state.eventModalOpen=false; state.editingEventId=null; state.sheetSettingsModalOpen=false;
+      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.lastOfficerResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null; state.recordsShown=false; state.showAttendanceStudentId=null; state.attendeesPage=1; state.eventModalOpen=false; state.editingEventId=null; state.sheetSettingsModalOpen=false; state.exportModalOpen=false;
       // an account's own department/section may have been changed by admin since login —
       // always refresh it so a stale, already-logged-in session doesn't keep enforcing old rules
       if(role==='officer' || role==='ssg' || role==='student'){
@@ -1710,7 +1711,7 @@ function renderAdminRecords(){
   // group the filtered records by student — the row-level detail lives in the modal
   const byStudent = {};
   rows.forEach(r=>{
-    if(!byStudent[r.studentId]) byStudent[r.studentId] = { studentId:r.studentId, studentName:r.studentName, department:r.department, scopes:new Set(), latest:0 };
+    if(!byStudent[r.studentId]) byStudent[r.studentId] = { studentId:r.studentId, studentName:r.studentName, department:r.department, section:r.section, scopes:new Set(), latest:0 };
     byStudent[r.studentId].scopes.add(r.scope);
     byStudent[r.studentId].latest = Math.max(byStudent[r.studentId].latest, r.amTimeIn||0, r.pmTimeIn||0);
   });
@@ -1734,12 +1735,15 @@ function renderAdminRecords(){
       </div>
     </div>
   </div>
+  <div style="margin-bottom:10px; display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+    ${canBulkReset ? `<button class="btn-gold" id="export-attendees-btn" ${studentRows.length===0?'disabled':''}>Export attendee list (${studentRows.length})</button>` : ''}
+    ${canBulkReset ? `<button class="btn-danger" id="bulk-reset-records-btn" ${rows.length===0?'disabled':''}>Reset all ${rows.length} record${rows.length===1?'':'s'} shown below</button>` : ''}
+  </div>
   <div style="margin-bottom:10px;">
     ${canBulkReset ? `
-      <button class="btn-danger" id="bulk-reset-records-btn" ${rows.length===0?'disabled':''}>Reset all ${rows.length} record${rows.length===1?'':'s'} shown below</button>
-      <p class="hint" style="margin-top:8px;">Clears attendance for <strong>${filterEventName}</strong>${state.adminFilterDept!=='all'?` in ${state.adminFilterDept}`:' across every department'}${scopeFilter!=='all'?` (${scopeLabel(scopeFilter)} desk only)`:''} — students will need to scan in again from scratch.</p>
+      <p class="hint">Clears attendance for <strong>${filterEventName}</strong>${state.adminFilterDept!=='all'?` in ${state.adminFilterDept}`:' across every department'}${scopeFilter!=='all'?` (${scopeLabel(scopeFilter)} desk only)`:''} — students will need to scan in again from scratch.</p>
     ` : `
-      <p class="hint">Select a specific event above to reset all of its attendance at once.</p>
+      <p class="hint">Select a specific event above to export its attendee list or reset all of its attendance at once.</p>
     `}
   </div>
   <div class="section-title">Students with matching records <span class="pill gold">${studentRows.length}</span></div>
@@ -1751,7 +1755,25 @@ function renderAdminRecords(){
   </div>
   ${paginationControls(page, totalPages, 'records')}
   ${renderStudentAttendanceModal()}
+  ${state.exportModalOpen ? renderExportModal(studentRows, filterEventName) : ''}
   `;
+}
+function renderExportModal(studentRows, eventName){
+  const sorted = [...studentRows].sort((a,b)=>a.studentName.localeCompare(b.studentName));
+  const lines = sorted.map(s=>`${s.studentName}\tStudent\t${s.department}${s.section?(' - '+s.section):''}`);
+  const text = `Name\tPosition/Rank\tOffice\n${lines.join('\n')}`;
+  return `
+  <div class="modal-overlay" id="export-modal-overlay">
+    <div class="modal-card" style="max-width:640px;">
+      <button class="close-x" id="close-export-modal-btn">&times;</button>
+      <h3 style="margin-top:0;">Export attendee list</h3>
+      <p class="hint" style="margin-top:-6px;">${sorted.length} student${sorted.length===1?'':'s'} for <strong>${eventName}</strong>. Copy this list to paste elsewhere, or download it as a spreadsheet-ready CSV.</p>
+      <textarea id="export-textarea" readonly rows="10" style="width:100%; font-family:'JetBrains Mono',monospace; font-size:12px; padding:10px; border-radius:8px; border:1px solid var(--border);">${text}</textarea>
+      <button class="btn-primary" style="width:100%; margin-top:10px;" id="copy-export-btn">Copy to clipboard</button>
+      <button class="btn-gold" style="width:100%; margin-top:8px;" id="download-export-btn">Download as CSV</button>
+      <button class="btn-ghost" style="width:100%; margin-top:8px;" id="close-export-modal-btn-2">Close</button>
+    </div>
+  </div>`;
 }
 function renderSheetSettingsModal(){
   const s = state.sheetSettingsDraft || DEFAULT_SHEET_SETTINGS;
@@ -2296,6 +2318,42 @@ function attachAdminHandlers(){
     await saveKey('attendance', DB.attendance);
     await logAdminAction('Bulk-reset attendance', `${toRemove.length} record(s) for ${eventName}${dept!=='all'?` (${dept})`:''}`);
     render();
+  };
+  const exportBtn = document.getElementById('export-attendees-btn');
+  if(exportBtn) exportBtn.onclick = ()=>{ state.exportModalOpen = true; render(); };
+  const closeExportModal = ()=>{ state.exportModalOpen = false; render(); };
+  const closeExportBtn1 = document.getElementById('close-export-modal-btn');
+  if(closeExportBtn1) closeExportBtn1.onclick = closeExportModal;
+  const closeExportBtn2 = document.getElementById('close-export-modal-btn-2');
+  if(closeExportBtn2) closeExportBtn2.onclick = closeExportModal;
+  const exportModalOverlay = document.getElementById('export-modal-overlay');
+  if(exportModalOverlay) exportModalOverlay.onclick = (e)=>{ if(e.target === exportModalOverlay) closeExportModal(); };
+  const copyExportBtn = document.getElementById('copy-export-btn');
+  if(copyExportBtn) copyExportBtn.onclick = async ()=>{
+    const ta = document.getElementById('export-textarea');
+    try{
+      await navigator.clipboard.writeText(ta.value);
+      copyExportBtn.textContent = 'Copied!';
+      setTimeout(()=>{ copyExportBtn.textContent = 'Copy to clipboard'; }, 1500);
+    }catch(e){
+      ta.select();
+      copyExportBtn.textContent = 'Select the text above and copy manually';
+    }
+  };
+  const downloadExportBtn = document.getElementById('download-export-btn');
+  if(downloadExportBtn) downloadExportBtn.onclick = async ()=>{
+    const ta = document.getElementById('export-textarea');
+    const lines = ta.value.split('\n').map(line => line.split('\t'));
+    const csv = lines.map(cols => cols.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const eventName = state.adminFilterEvent==='all' ? 'attendees' : ((DB.events.find(e=>e.id===state.adminFilterEvent)||{}).name || 'attendees');
+    a.href = url;
+    a.download = `${eventName.replace(/[^a-z0-9]+/gi,'-')}-attendees.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    await logAdminAction('Exported attendee list', eventName);
   };
   const logPrevBtn = document.getElementById('log-prev-btn');
   if(logPrevBtn) logPrevBtn.onclick = ()=>{ state.logPage = Math.max(1, (state.logPage||1)-1); render(); };
