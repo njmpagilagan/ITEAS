@@ -240,6 +240,7 @@ let state = {
   sheetSettingsModalOpen:false,
   sheetDraft:{title:'', date:'', time:'', venue:'', rows:30, eventId:'none', session:null},
   sheetPreviewPage:0,
+  sheetZoom:70,
   adminFilterDept:'all',
   adminFilterScope:'all',
   profileMsg:'',
@@ -2042,8 +2043,14 @@ function renderAdminSheet(){
           <button class="btn-ghost" id="sheet-preview-next-btn" ${activePage>=chunks.length-1?'disabled':''}>Next &rarr;</button>
         </span>` : ''}
       </div>
-      <div class="card" style="overflow-x:auto; background:var(--bg); padding:28px;">
-        <div class="print-sheet-container" id="print-sheet" style="display:flex; flex-direction:column; align-items:center; gap:28px;">
+      <div class="card sheet-zoom-bar" style="display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-bottom:10px; padding:8px 14px;">
+        <button class="btn-ghost" id="sheet-zoom-out-btn" style="padding:4px 12px;">&minus;</button>
+        <span class="hint" style="margin:0; min-width:40px; text-align:center;">${state.sheetZoom}%</span>
+        <button class="btn-ghost" id="sheet-zoom-in-btn" style="padding:4px 12px;">+</button>
+        <button class="btn-ghost" id="sheet-zoom-reset-btn" style="margin-left:6px;">Reset</button>
+      </div>
+      <div class="card sheet-preview-viewport">
+        <div class="print-sheet-container" id="print-sheet" style="display:flex; flex-direction:column; align-items:center; gap:28px; zoom:${state.sheetZoom}%;">
           ${chunks.map((chunk, idx)=>renderOneSheet(s, d, chunk, idx, idx===activePage)).join('')}
         </div>
       </div>
@@ -2655,6 +2662,12 @@ function attachAdminHandlers(){
   if(sheetPrevPageBtn) sheetPrevPageBtn.onclick = ()=>{ state.sheetPreviewPage = Math.max(0, (state.sheetPreviewPage||0)-1); render(); };
   const sheetNextPageBtn = document.getElementById('sheet-preview-next-btn');
   if(sheetNextPageBtn) sheetNextPageBtn.onclick = ()=>{ state.sheetPreviewPage = (state.sheetPreviewPage||0)+1; render(); };
+  const sheetZoomOutBtn = document.getElementById('sheet-zoom-out-btn');
+  if(sheetZoomOutBtn) sheetZoomOutBtn.onclick = ()=>{ state.sheetZoom = Math.max(30, (state.sheetZoom||70)-10); render(); };
+  const sheetZoomInBtn = document.getElementById('sheet-zoom-in-btn');
+  if(sheetZoomInBtn) sheetZoomInBtn.onclick = ()=>{ state.sheetZoom = Math.min(150, (state.sheetZoom||70)+10); render(); };
+  const sheetZoomResetBtn = document.getElementById('sheet-zoom-reset-btn');
+  if(sheetZoomResetBtn) sheetZoomResetBtn.onclick = ()=>{ state.sheetZoom = 70; render(); };
   const openSheetSettingsBtn = document.getElementById('open-sheet-settings-btn');
   if(openSheetSettingsBtn) openSheetSettingsBtn.onclick = ()=>{ state.sheetSettingsModalOpen = true; state.err=''; render(); };
   const closeSheetSettings = ()=>{ state.sheetSettingsModalOpen = false; state.err=''; render(); };
