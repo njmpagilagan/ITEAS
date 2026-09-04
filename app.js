@@ -231,6 +231,9 @@ let state = {
 
 const DEFAULT_SHEET_SETTINGS = {
   leftLogo: '', rightLogo: '', footerLogo: '',
+  leftLogoSize: 88, leftLogoX: 0, leftLogoY: 0,
+  rightLogoSize: 88, rightLogoX: 0, rightLogoY: 0,
+  footerLogoSize: 60, footerLogoX: 0, footerLogoY: 0,
   university: 'OCCIDENTAL MINDORO STATE UNIVERSITY',
   address: 'Lubang, Occidental Mindoro',
   website: 'www.omsc.edu.ph',
@@ -597,6 +600,31 @@ function renderCameraModal(){
   </div>`;
 }
 let cameraStream = null, cameraLoop = null;
+/* ---------------- attendance sheet logo dragging ----------------
+   A single pair of document-level listeners, registered once — not per render — so
+   repeatedly opening/closing this page never accumulates duplicate handlers. */
+let sheetDragState = null;
+function handleSheetLogoDragMove(e){
+  if(!sheetDragState) return;
+  const point = e.touches ? e.touches[0] : e;
+  const dx = point.clientX - sheetDragState.startX;
+  const dy = point.clientY - sheetDragState.startY;
+  const newX = Math.round(sheetDragState.origX + dx);
+  const newY = Math.round(sheetDragState.origY + dy);
+  if(state.sheetSettingsDraft){
+    state.sheetSettingsDraft[sheetDragState.key+'LogoX'] = newX;
+    state.sheetSettingsDraft[sheetDragState.key+'LogoY'] = newY;
+  }
+  if(sheetDragState.img){
+    sheetDragState.img.style.transform = `translate(${newX}px, ${newY}px)`;
+  }
+  if(e.cancelable) e.preventDefault();
+}
+function handleSheetLogoDragEnd(){ sheetDragState = null; }
+document.addEventListener('mousemove', handleSheetLogoDragMove);
+document.addEventListener('touchmove', handleSheetLogoDragMove, {passive:false});
+document.addEventListener('mouseup', handleSheetLogoDragEnd);
+document.addEventListener('touchend', handleSheetLogoDragEnd);
 function attachStudentHandlers(){
   const openCam = document.getElementById('open-camera-btn');
   if(openCam) openCam.onclick = ()=>{ state.cameraOpen=true; state.err=''; render(); };
@@ -1789,13 +1817,27 @@ function renderSheetSettingsModal(){
           <label>Left logo</label>
           ${s.leftLogo ? `<img src="${s.leftLogo}" style="height:44px; display:block; margin-bottom:6px;">` : ''}
           <input type="file" id="left-logo-input" accept="image/*">
-          ${s.leftLogo ? `<button class="btn-ghost" id="remove-left-logo-btn" style="margin-top:6px;">Remove</button>` : ''}
+          ${s.leftLogo ? `
+          <div style="margin-top:8px;">
+            <label style="margin-bottom:2px;">Size (${s.leftLogoSize}px)</label>
+            <input type="range" id="left-logo-size" min="30" max="150" value="${s.leftLogoSize}" style="width:100%;">
+          </div>
+          <button class="btn-ghost" id="remove-left-logo-btn" style="margin-top:6px;">Remove</button>
+          <button class="btn-ghost" id="reset-left-logo-pos-btn" style="margin-top:6px;">Reset position</button>
+          ` : ''}
         </div>
         <div class="field" style="flex:1;">
           <label>Right logo</label>
           ${s.rightLogo ? `<img src="${s.rightLogo}" style="height:44px; display:block; margin-bottom:6px;">` : ''}
           <input type="file" id="right-logo-input" accept="image/*">
-          ${s.rightLogo ? `<button class="btn-ghost" id="remove-right-logo-btn" style="margin-top:6px;">Remove</button>` : ''}
+          ${s.rightLogo ? `
+          <div style="margin-top:8px;">
+            <label style="margin-bottom:2px;">Size (${s.rightLogoSize}px)</label>
+            <input type="range" id="right-logo-size" min="30" max="150" value="${s.rightLogoSize}" style="width:100%;">
+          </div>
+          <button class="btn-ghost" id="remove-right-logo-btn" style="margin-top:6px;">Remove</button>
+          <button class="btn-ghost" id="reset-right-logo-pos-btn" style="margin-top:6px;">Reset position</button>
+          ` : ''}
         </div>
       </div>
       <div class="row">
@@ -1819,7 +1861,14 @@ function renderSheetSettingsModal(){
         <p class="hint" style="margin-top:-4px;">A separate logo from the header — e.g. an ISO certification mark or similar badge.</p>
         ${s.footerLogo ? `<img src="${s.footerLogo}" style="height:50px; display:block; margin-bottom:6px;">` : ''}
         <input type="file" id="footer-logo-input" accept="image/*">
-        ${s.footerLogo ? `<button class="btn-ghost" id="remove-footer-logo-btn" style="margin-top:6px;">Remove</button>` : ''}
+        ${s.footerLogo ? `
+        <div style="margin-top:8px; max-width:260px;">
+          <label style="margin-bottom:2px;">Size (${s.footerLogoSize}px)</label>
+          <input type="range" id="footer-logo-size" min="20" max="120" value="${s.footerLogoSize}" style="width:100%;">
+        </div>
+        <button class="btn-ghost" id="remove-footer-logo-btn" style="margin-top:6px;">Remove</button>
+        <button class="btn-ghost" id="reset-footer-logo-pos-btn" style="margin-top:6px;">Reset position</button>
+        ` : ''}
       </div>
       <div class="row">
         <div class="field" style="flex:1;"><label>Footer label</label><input id="sh-footerlabel" value="${s.footerLabel}"></div>
@@ -1856,12 +1905,12 @@ function renderAdminSheet(){
     <p class="hint">Opens your browser's print dialog — choose "Save as PDF" there if you want a digital copy instead of printing.</p>
   </div>
 
-  <div class="section-title">Preview</div>
+  <div class="section-title">Preview <span class="hint" style="font-weight:400; text-transform:none; letter-spacing:0;">— drag a logo to reposition it, use the settings modal to resize</span></div>
   <div class="card" style="overflow-x:auto; background:var(--bg); padding:28px; display:flex; justify-content:center;">
     <div class="print-sheet" id="print-sheet">
       <div class="ps-topline"><span>Reference No.: ${s.refNo}</span><span>Effectivity Date: ${s.effectivityDate}</span><span>Revision No. ${s.revisionNo}</span></div>
       <div class="ps-header">
-        <div class="ps-logo">${s.leftLogo ? `<img src="${s.leftLogo}">` : ''}</div>
+        <div class="ps-logo">${s.leftLogo ? `<img class="ps-draggable-logo" data-logo="left" src="${s.leftLogo}" style="width:${s.leftLogoSize}px; height:${s.leftLogoSize}px; transform:translate(${s.leftLogoX}px, ${s.leftLogoY}px);">` : ''}</div>
         <div class="ps-headtext">
           <div class="ps-republic">Republic of the Philippines</div>
           <div class="ps-university">${s.university}</div>
@@ -1869,7 +1918,7 @@ function renderAdminSheet(){
           <div class="ps-contact">Website: ${s.website} &nbsp; Email address: ${s.email}</div>
           <div class="ps-contact">Tele/Fax: ${s.telfax}</div>
         </div>
-        <div class="ps-logo">${s.rightLogo ? `<img src="${s.rightLogo}">` : ''}</div>
+        <div class="ps-logo">${s.rightLogo ? `<img class="ps-draggable-logo" data-logo="right" src="${s.rightLogo}" style="width:${s.rightLogoSize}px; height:${s.rightLogoSize}px; transform:translate(${s.rightLogoX}px, ${s.rightLogoY}px);">` : ''}</div>
       </div>
       <div class="ps-collegeunit">${s.collegeUnit}</div>
       <div class="ps-title">COLLEGE/OFFICE ACTIVITY/SEMINAR ATTENDANCE SHEET</div>
@@ -1882,8 +1931,8 @@ function renderAdminSheet(){
         </div>
       </div>
       <table class="ps-table">
-        <tr><th style="width:36px;"></th><th>Name</th><th style="width:60px;">Sex</th><th style="width:110px;">Position/Rank</th><th style="width:100px;">Office</th><th style="width:130px;">Signature</th></tr>
-        ${rows.map(n=>`<tr><td>${n}.</td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')}
+        <tr><th>Name</th><th style="width:60px;">Sex</th><th style="width:110px;">Position/Rank</th><th style="width:100px;">Office</th><th style="width:130px;">Signature</th></tr>
+        ${rows.map(n=>`<tr><td>${n}.</td><td></td><td></td><td></td><td></td></tr>`).join('')}
       </table>
       <div class="ps-footer">
         <div class="ps-footer-row">
@@ -1892,7 +1941,7 @@ function renderAdminSheet(){
             <div class="ps-sigline"></div>
             <div class="ps-siglabel">${s.signatureLabel}</div>
           </div>
-          ${s.footerLogo ? `<div class="ps-footer-logo"><img src="${s.footerLogo}"></div>` : ''}
+          ${s.footerLogo ? `<div class="ps-footer-logo"><img class="ps-draggable-logo" data-logo="footer" src="${s.footerLogo}" style="width:${s.footerLogoSize}px; height:${s.footerLogoSize}px; transform:translate(${s.footerLogoX}px, ${s.footerLogoY}px);"></div>` : ''}
         </div>
       </div>
     </div>
@@ -2390,6 +2439,45 @@ function attachAdminHandlers(){
   };
   const removeFooterLogo = document.getElementById('remove-footer-logo-btn');
   if(removeFooterLogo) removeFooterLogo.onclick = ()=>{ state.sheetSettingsDraft.footerLogo = ''; render(); };
+  // logo size sliders — update the live preview + label directly, no re-render, so a mid-drag
+  // render() never interrupts the browser's native slider-dragging state
+  [['left-logo-size','leftLogoSize'], ['right-logo-size','rightLogoSize'], ['footer-logo-size','footerLogoSize']].forEach(([id, field])=>{
+    const slider = document.getElementById(id);
+    if(!slider) return;
+    slider.oninput = ()=>{
+      const val = parseInt(slider.value, 10);
+      state.sheetSettingsDraft[field] = val;
+      const key = field.replace('LogoSize','').toLowerCase();
+      const img = document.querySelector(`.ps-draggable-logo[data-logo="${key}"]`);
+      if(img){ img.style.width = val+'px'; img.style.height = val+'px'; }
+      const label = slider.previousElementSibling;
+      if(label) label.textContent = `Size (${val}px)`;
+    };
+  });
+  [['reset-left-logo-pos-btn','left'], ['reset-right-logo-pos-btn','right'], ['reset-footer-logo-pos-btn','footer']].forEach(([id, key])=>{
+    const btn = document.getElementById(id);
+    if(btn) btn.onclick = ()=>{
+      state.sheetSettingsDraft[key+'LogoX'] = 0;
+      state.sheetSettingsDraft[key+'LogoY'] = 0;
+      render();
+    };
+  });
+  document.querySelectorAll('.ps-draggable-logo').forEach(img=>{
+    const key = img.dataset.logo;
+    img.style.cursor = 'grab';
+    const startDrag = (e)=>{
+      const point = e.touches ? e.touches[0] : e;
+      sheetDragState = {
+        key, img,
+        startX: point.clientX, startY: point.clientY,
+        origX: (state.sheetSettingsDraft && state.sheetSettingsDraft[key+'LogoX']) || 0,
+        origY: (state.sheetSettingsDraft && state.sheetSettingsDraft[key+'LogoY']) || 0
+      };
+      if(e.cancelable) e.preventDefault();
+    };
+    img.onmousedown = startDrag;
+    img.ontouchstart = startDrag;
+  });
   [
     ['sh-university','university'], ['sh-address','address'], ['sh-website','website'],
     ['sh-email','email'], ['sh-telfax','telfax'], ['sh-collegeunit','collegeUnit'],
