@@ -277,7 +277,7 @@
   @media (max-width:800px){ .analytics-grid{grid-template-columns:1fr;} }
   .sheet-layout{display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;}
   .sheet-form-col{flex:1 1 340px; max-width:400px;}
-  .sheet-preview-col{flex:2 1 420px; min-width:0;}
+  .sheet-preview-col{flex:2 1 420px;}
   @media (max-width:900px){
     .sheet-layout{flex-direction:column;}
     .sheet-form-col{max-width:100%; width:100%;}
