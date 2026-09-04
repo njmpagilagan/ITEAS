@@ -423,7 +423,7 @@
   .ps-address{font-size:12px;}
   .ps-contact{font-size:11px;}
   .ps-collegeunit{
-    text-align:center; font-family:'UnifrakturMaguntia', 'Old English Text MT', serif; font-size:20px; margin:12px 0 0 0;
+    text-align:center; font-family:'Old English Text MT', 'UnifrakturMaguntia', serif; font-size:20px; margin:12px 0 0 0;
     padding-bottom:8px; border-bottom:3px double #000;
   }
   .ps-title{text-align:center; font-weight:700; font-size:13px; margin:14px 0 12px 0;}
