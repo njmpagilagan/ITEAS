@@ -233,7 +233,7 @@ const DEFAULT_SHEET_SETTINGS = {
   leftLogo: '', rightLogo: '', footerLogo: '',
   leftLogoSize: 88, leftLogoX: 0, leftLogoY: 0,
   rightLogoSize: 88, rightLogoX: 0, rightLogoY: 0,
-  footerLogoSize: 60, footerLogoX: 0, footerLogoY: 0,
+  footerLogoWidth: 188, footerLogoHeight: 75, footerLogoX: 0, footerLogoY: 0,
   university: 'OCCIDENTAL MINDORO STATE UNIVERSITY',
   address: 'Lubang, Occidental Mindoro',
   website: 'www.omsc.edu.ph',
@@ -1858,13 +1858,19 @@ function renderSheetSettingsModal(){
       <div class="section-title">Footer</div>
       <div class="field">
         <label>Footer logo</label>
-        <p class="hint" style="margin-top:-4px;">A separate logo from the header — e.g. an ISO certification mark or similar badge.</p>
+        <p class="hint" style="margin-top:-4px;">A separate logo from the header — e.g. an ISO certification mark or similar badge. Real-world reference size: 1.98cm tall × 4.98cm wide (a wide badge shape, not square).</p>
         ${s.footerLogo ? `<img src="${s.footerLogo}" style="height:50px; display:block; margin-bottom:6px;">` : ''}
         <input type="file" id="footer-logo-input" accept="image/*">
         ${s.footerLogo ? `
-        <div style="margin-top:8px; max-width:260px;">
-          <label style="margin-bottom:2px;">Size (${s.footerLogoSize}px)</label>
-          <input type="range" id="footer-logo-size" min="20" max="200" value="${s.footerLogoSize}" style="width:100%;">
+        <div class="row" style="margin-top:8px; max-width:400px;">
+          <div class="field" style="flex:1; margin-bottom:0;">
+            <label style="margin-bottom:2px;">Width (${s.footerLogoWidth}px)</label>
+            <input type="range" id="footer-logo-width" min="40" max="320" value="${s.footerLogoWidth}" style="width:100%;">
+          </div>
+          <div class="field" style="flex:1; margin-bottom:0;">
+            <label style="margin-bottom:2px;">Height (${s.footerLogoHeight}px)</label>
+            <input type="range" id="footer-logo-height" min="20" max="160" value="${s.footerLogoHeight}" style="width:100%;">
+          </div>
         </div>
         <button class="btn-ghost" id="remove-footer-logo-btn" style="margin-top:6px;">Remove</button>
         <button class="btn-ghost" id="reset-footer-logo-pos-btn" style="margin-top:6px;">Reset position</button>
@@ -1941,7 +1947,7 @@ function renderAdminSheet(){
             <div class="ps-sigline"></div>
             <div class="ps-siglabel">${s.signatureLabel}</div>
           </div>
-          ${s.footerLogo ? `<div class="ps-footer-logo"><img class="ps-draggable-logo" data-logo="footer" src="${s.footerLogo}" style="width:${s.footerLogoSize}px; height:${s.footerLogoSize}px; transform:translate(${s.footerLogoX}px, ${s.footerLogoY}px);"></div>` : ''}
+          ${s.footerLogo ? `<div class="ps-footer-logo"><img class="ps-draggable-logo" data-logo="footer" src="${s.footerLogo}" style="width:${s.footerLogoWidth}px; height:${s.footerLogoHeight}px; transform:translate(${s.footerLogoX}px, ${s.footerLogoY}px);"></div>` : ''}
         </div>
       </div>
     </div>
@@ -2441,19 +2447,37 @@ function attachAdminHandlers(){
   if(removeFooterLogo) removeFooterLogo.onclick = ()=>{ state.sheetSettingsDraft.footerLogo = ''; render(); };
   // logo size sliders — update the live preview + label directly, no re-render, so a mid-drag
   // render() never interrupts the browser's native slider-dragging state
-  [['left-logo-size','leftLogoSize'], ['right-logo-size','rightLogoSize'], ['footer-logo-size','footerLogoSize']].forEach(([id, field])=>{
+  [['left-logo-size','leftLogoSize','left'], ['right-logo-size','rightLogoSize','right']].forEach(([id, field, key])=>{
     const slider = document.getElementById(id);
     if(!slider) return;
     slider.oninput = ()=>{
       const val = parseInt(slider.value, 10);
       state.sheetSettingsDraft[field] = val;
-      const key = field.replace('LogoSize','').toLowerCase();
       const img = document.querySelector(`.ps-draggable-logo[data-logo="${key}"]`);
       if(img){ img.style.width = val+'px'; img.style.height = val+'px'; }
       const label = slider.previousElementSibling;
       if(label) label.textContent = `Size (${val}px)`;
     };
   });
+  // footer logo is a wide rectangular badge shape, not square — width and height adjust independently
+  const footerWidthSlider = document.getElementById('footer-logo-width');
+  if(footerWidthSlider) footerWidthSlider.oninput = ()=>{
+    const val = parseInt(footerWidthSlider.value, 10);
+    state.sheetSettingsDraft.footerLogoWidth = val;
+    const img = document.querySelector('.ps-draggable-logo[data-logo="footer"]');
+    if(img) img.style.width = val+'px';
+    const label = footerWidthSlider.previousElementSibling;
+    if(label) label.textContent = `Width (${val}px)`;
+  };
+  const footerHeightSlider = document.getElementById('footer-logo-height');
+  if(footerHeightSlider) footerHeightSlider.oninput = ()=>{
+    const val = parseInt(footerHeightSlider.value, 10);
+    state.sheetSettingsDraft.footerLogoHeight = val;
+    const img = document.querySelector('.ps-draggable-logo[data-logo="footer"]');
+    if(img) img.style.height = val+'px';
+    const label = footerHeightSlider.previousElementSibling;
+    if(label) label.textContent = `Height (${val}px)`;
+  };
   [['reset-left-logo-pos-btn','left'], ['reset-right-logo-pos-btn','right'], ['reset-footer-logo-pos-btn','footer']].forEach(([id, key])=>{
     const btn = document.getElementById(id);
     if(btn) btn.onclick = ()=>{
