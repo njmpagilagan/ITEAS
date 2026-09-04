@@ -2010,6 +2010,35 @@ function renderOneSheet(s, d, attendeesChunk, pageIndex, isActive){
       </div>
     </div>`;
 }
+function renderSheetPreviewModal(s, d, chunks, activePage){
+  return `
+  <div class="modal-overlay sheet-preview-overlay" id="sheet-preview-modal-overlay">
+    <div class="modal-card sheet-preview-card" style="max-width:95vw; width:auto;">
+      <button class="close-x" id="close-sheet-preview-btn">&times;</button>
+      <div class="section-title" style="margin-top:0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+        <span>Preview <span class="hint" style="font-weight:400; text-transform:none; letter-spacing:0;">— drag a logo to reposition it, use the settings modal to resize</span></span>
+        ${chunks.length>1 ? `
+        <span style="display:flex; align-items:center; gap:10px; text-transform:none; letter-spacing:0; font-weight:400;">
+          <button class="btn-ghost" id="sheet-preview-prev-btn" ${activePage<=0?'disabled':''}>&larr; Prev</button>
+          <span class="hint" style="margin:0;">Page ${activePage+1} of ${chunks.length}</span>
+          <button class="btn-ghost" id="sheet-preview-next-btn" ${activePage>=chunks.length-1?'disabled':''}>Next &rarr;</button>
+        </span>` : ''}
+      </div>
+      <div class="sheet-zoom-bar" style="display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-bottom:10px;">
+        <button class="btn-ghost" id="sheet-zoom-out-btn" style="padding:4px 12px;">&minus;</button>
+        <span class="hint" id="sheet-zoom-label" style="margin:0; min-width:40px; text-align:center;">${state.sheetZoom}%</span>
+        <button class="btn-ghost" id="sheet-zoom-in-btn" style="padding:4px 12px;">+</button>
+        <button class="btn-ghost" id="sheet-zoom-reset-btn" style="margin-left:6px;">Reset</button>
+        <button class="btn-gold" id="print-sheet-btn-modal" style="margin-left:auto;">Print / Save as PDF</button>
+      </div>
+      <div class="sheet-preview-viewport">
+        <div class="print-sheet-container" id="print-sheet" style="display:flex; flex-direction:column; align-items:center; gap:28px; zoom:${state.sheetZoom}%;">
+          ${chunks.map((chunk, idx)=>renderOneSheet(s, d, chunk, idx, idx===activePage)).join('')}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
 function renderAdminSheet(){
   const s = state.sheetSettingsDraft || DEFAULT_SHEET_SETTINGS;
   const d = state.sheetDraft;
@@ -2054,32 +2083,7 @@ function renderAdminSheet(){
     <p class="hint">Opens your browser's print dialog — choose "Save as PDF" there if you want a digital copy instead of printing. Each sheet prints on its own page.</p>
   </div>
 
-  <div class="sheet-preview-modal${state.sheetPreviewModalOpen ? ' open' : ''}" id="sheet-preview-modal-wrapper">
-    <div class="sheet-preview-modal-inner">
-      <button class="close-x" id="close-sheet-preview-btn">&times;</button>
-      <div class="section-title" style="margin-top:0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
-        <span>Preview <span class="hint" style="font-weight:400; text-transform:none; letter-spacing:0;">— drag a logo to reposition it, use the settings modal to resize</span></span>
-        ${chunks.length>1 ? `
-        <span style="display:flex; align-items:center; gap:10px; text-transform:none; letter-spacing:0; font-weight:400;">
-          <button class="btn-ghost" id="sheet-preview-prev-btn" ${activePage<=0?'disabled':''}>&larr; Prev</button>
-          <span class="hint" style="margin:0;">Page ${activePage+1} of ${chunks.length}</span>
-          <button class="btn-ghost" id="sheet-preview-next-btn" ${activePage>=chunks.length-1?'disabled':''}>Next &rarr;</button>
-        </span>` : ''}
-      </div>
-      <div class="sheet-zoom-bar" style="display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-bottom:10px;">
-        <button class="btn-ghost" id="sheet-zoom-out-btn" style="padding:4px 12px;">&minus;</button>
-        <span class="hint" id="sheet-zoom-label" style="margin:0; min-width:40px; text-align:center;">${state.sheetZoom}%</span>
-        <button class="btn-ghost" id="sheet-zoom-in-btn" style="padding:4px 12px;">+</button>
-        <button class="btn-ghost" id="sheet-zoom-reset-btn" style="margin-left:6px;">Reset</button>
-        <button class="btn-gold" id="print-sheet-btn-modal" style="margin-left:auto;">Print / Save as PDF</button>
-      </div>
-      <div class="sheet-preview-viewport">
-        <div class="print-sheet-container" id="print-sheet" style="display:flex; flex-direction:column; align-items:center; gap:28px; zoom:${state.sheetZoom}%;">
-          ${chunks.map((chunk, idx)=>renderOneSheet(s, d, chunk, idx, idx===activePage)).join('')}
-        </div>
-      </div>
-    </div>
-  </div>
+  ${state.sheetPreviewModalOpen ? renderSheetPreviewModal(s, d, chunks, activePage) : ''}
   ${state.sheetSettingsModalOpen ? renderSheetSettingsModal() : ''}
   `;
 }
@@ -2733,8 +2737,8 @@ function attachAdminHandlers(){
   if(openSheetPreviewBtn) openSheetPreviewBtn.onclick = ()=>{ state.sheetPreviewModalOpen = true; render(); };
   const closeSheetPreviewBtn = document.getElementById('close-sheet-preview-btn');
   if(closeSheetPreviewBtn) closeSheetPreviewBtn.onclick = ()=>{ state.sheetPreviewModalOpen = false; render(); };
-  const sheetPreviewModalWrapper = document.getElementById('sheet-preview-modal-wrapper');
-  if(sheetPreviewModalWrapper) sheetPreviewModalWrapper.onclick = (e)=>{ if(e.target === sheetPreviewModalWrapper){ state.sheetPreviewModalOpen = false; render(); } };
+  const sheetPreviewModalOverlay = document.getElementById('sheet-preview-modal-overlay');
+  if(sheetPreviewModalOverlay) sheetPreviewModalOverlay.onclick = (e)=>{ if(e.target === sheetPreviewModalOverlay){ state.sheetPreviewModalOpen = false; render(); } };
 
   if(state.adminSubRoute==='profile') attachProfileHandlers();
   wirePasswordToggles();

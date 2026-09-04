@@ -275,16 +275,10 @@
   .bar-value{width:70px; text-align:right; font-size:12px; font-weight:700; color:var(--ink-soft); flex-shrink:0;}
   .analytics-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
   @media (max-width:800px){ .analytics-grid{grid-template-columns:1fr;} }
-  .sheet-layout{display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;}
-  .sheet-form-col{flex:1 1 340px; max-width:400px;}
-  .sheet-preview-col{flex:2 1 420px; min-width:0;}
   .sheet-preview-viewport{
     background:var(--bg); padding:28px; overflow:auto;
-    max-height:80vh;
-  }
-  @media (max-width:900px){
-    .sheet-layout{flex-direction:column;}
-    .sheet-form-col{max-width:100%; width:100%;}
+    max-height:70vh;
+    display:flex; justify-content:center;
   }
   .section-title{font-size:13.5px; font-weight:700; margin:18px 0 8px 0; display:flex; align-items:center; gap:8px;}
   .section-title:first-child{margin-top:0;}
@@ -463,6 +457,12 @@
   @media print{
     body *{ visibility:hidden; }
     .print-sheet-container, .print-sheet-container *{ visibility:visible; }
+    /* the preview modal is normally display:none when closed, and a fixed overlay when open —
+       neither is valid for printing, so force it back to plain block flow either way, letting
+       the rules below take over positioning for the actual print output */
+    .sheet-preview-overlay{ display:block !important; position:static !important; background:none !important; padding:0 !important; inset:auto !important; }
+    .sheet-preview-card{ max-width:none !important; max-height:none !important; overflow:visible !important; padding:0 !important; background:none !important; box-shadow:none !important; }
+    .sheet-preview-viewport{ max-height:none !important; padding:0 !important; background:none !important; }
     .print-sheet-container{ position:absolute; top:0; left:0; width:8.5in; zoom:100% !important; }
     .print-sheet{
       width:8.5in; padding:0; margin:0; box-shadow:none; border:none;
