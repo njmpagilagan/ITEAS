@@ -146,6 +146,16 @@ function formatDateLong(dateStr){
   if(!monthName) return dateStr;
   return `${monthName} ${String(parseInt(day,10)).padStart(2,'0')}, ${y}`;
 }
+function computeFitZoom(){
+  const viewport = document.querySelector('.sheet-preview-viewport');
+  if(!viewport) return null;
+  const paddingAllowance = 56; // roughly the viewport's own left+right padding
+  const availableWidth = viewport.clientWidth - paddingAllowance;
+  const naturalWidthPx = 8.5 * 96; // .print-sheet is fixed at 8.5in
+  if(availableWidth <= 0) return null;
+  let zoom = Math.floor((availableWidth / naturalWidthPx) * 100);
+  return Math.max(30, Math.min(150, zoom));
+}
 function paginate(list, page, pageSize){
   const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
   const clampedPage = Math.min(Math.max(1, page || 1), totalPages);
@@ -241,6 +251,7 @@ let state = {
   sheetDraft:{title:'', date:'', time:'', venue:'', rows:30, eventId:'none', session:null},
   sheetPreviewPage:0,
   sheetZoom:70,
+  sheetZoomAuto:true,
   adminFilterDept:'all',
   adminFilterScope:'all',
   profileMsg:'',
@@ -564,6 +575,9 @@ function attachShellHandlers(){
       if(role==='admin' && sub==='analytics'){
         state.analyticsPage = 1;
       }
+      if(role==='admin' && sub==='sheet'){
+        state.sheetZoomAuto = true; // re-enable auto-fit on every fresh visit to this page
+      }
       render();
     };
   });
@@ -662,6 +676,12 @@ document.addEventListener('mousemove', handleSheetLogoDragMove);
 document.addEventListener('touchmove', handleSheetLogoDragMove, {passive:false});
 document.addEventListener('mouseup', handleSheetLogoDragEnd);
 document.addEventListener('touchend', handleSheetLogoDragEnd);
+let sheetResizeDebounce = null;
+window.addEventListener('resize', ()=>{
+  if(!(state.route==='admin' && state.adminSubRoute==='sheet' && state.sheetZoomAuto)) return;
+  clearTimeout(sheetResizeDebounce);
+  sheetResizeDebounce = setTimeout(render, 150);
+});
 function attachStudentHandlers(){
   const openCam = document.getElementById('open-camera-btn');
   if(openCam) openCam.onclick = ()=>{ state.cameraOpen=true; state.err=''; render(); };
@@ -2045,7 +2065,7 @@ function renderAdminSheet(){
       </div>
       <div class="card sheet-zoom-bar" style="display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-bottom:10px; padding:8px 14px;">
         <button class="btn-ghost" id="sheet-zoom-out-btn" style="padding:4px 12px;">&minus;</button>
-        <span class="hint" style="margin:0; min-width:40px; text-align:center;">${state.sheetZoom}%</span>
+        <span class="hint" id="sheet-zoom-label" style="margin:0; min-width:40px; text-align:center;">${state.sheetZoom}%</span>
         <button class="btn-ghost" id="sheet-zoom-in-btn" style="padding:4px 12px;">+</button>
         <button class="btn-ghost" id="sheet-zoom-reset-btn" style="margin-left:6px;">Reset</button>
       </div>
@@ -2663,11 +2683,26 @@ function attachAdminHandlers(){
   const sheetNextPageBtn = document.getElementById('sheet-preview-next-btn');
   if(sheetNextPageBtn) sheetNextPageBtn.onclick = ()=>{ state.sheetPreviewPage = (state.sheetPreviewPage||0)+1; render(); };
   const sheetZoomOutBtn = document.getElementById('sheet-zoom-out-btn');
-  if(sheetZoomOutBtn) sheetZoomOutBtn.onclick = ()=>{ state.sheetZoom = Math.max(30, (state.sheetZoom||70)-10); render(); };
+  if(sheetZoomOutBtn) sheetZoomOutBtn.onclick = ()=>{ state.sheetZoomAuto = false; state.sheetZoom = Math.max(30, (state.sheetZoom||70)-10); render(); };
   const sheetZoomInBtn = document.getElementById('sheet-zoom-in-btn');
-  if(sheetZoomInBtn) sheetZoomInBtn.onclick = ()=>{ state.sheetZoom = Math.min(150, (state.sheetZoom||70)+10); render(); };
+  if(sheetZoomInBtn) sheetZoomInBtn.onclick = ()=>{ state.sheetZoomAuto = false; state.sheetZoom = Math.min(150, (state.sheetZoom||70)+10); render(); };
   const sheetZoomResetBtn = document.getElementById('sheet-zoom-reset-btn');
-  if(sheetZoomResetBtn) sheetZoomResetBtn.onclick = ()=>{ state.sheetZoom = 70; render(); };
+  if(sheetZoomResetBtn) sheetZoomResetBtn.onclick = ()=>{
+    state.sheetZoomAuto = true;
+    const fitZoom = computeFitZoom();
+    state.sheetZoom = fitZoom || 70;
+    render();
+  };
+  // while auto-fit is on, keep recalculating against the actual rendered viewport — covers the
+  // first visit, window resizes, and switching monitors/resolutions, without ever overriding a
+  // manual +/-/ adjustment (which turns auto-fit off until Reset is pressed again)
+  if(state.adminSubRoute==='sheet' && state.sheetZoomAuto){
+    const fitZoom = computeFitZoom();
+    if(fitZoom && fitZoom !== state.sheetZoom){
+      state.sheetZoom = fitZoom;
+      render();
+    }
+  }
   const openSheetSettingsBtn = document.getElementById('open-sheet-settings-btn');
   if(openSheetSettingsBtn) openSheetSettingsBtn.onclick = ()=>{ state.sheetSettingsModalOpen = true; state.err=''; render(); };
   const closeSheetSettings = ()=>{ state.sheetSettingsModalOpen = false; state.err=''; render(); };
