@@ -231,7 +231,7 @@ let state = {
 
 const DEFAULT_SHEET_SETTINGS = {
   leftLogo: '', rightLogo: '', footerLogo: '',
-  leftLogoSize: 88, leftLogoX: 0, leftLogoY: 0,
+  leftLogoSize: 126, leftLogoX: 0, leftLogoY: 0,
   rightLogoSize: 88, rightLogoX: 0, rightLogoY: 0,
   footerLogoWidth: 188, footerLogoHeight: 75, footerLogoX: 0, footerLogoY: 0,
   university: 'OCCIDENTAL MINDORO STATE UNIVERSITY',
