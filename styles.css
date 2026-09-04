@@ -412,12 +412,14 @@
     border:1px solid #d9d9d9;
   }
   .ps-topline{display:flex; justify-content:space-between; font-size:10px; margin-bottom:14px; gap:12px;}
-  .ps-header{display:flex; align-items:center; gap:14px;}
-  .ps-logo{width:auto; flex-shrink:0; display:flex; align-items:center; justify-content:center;}
+  .ps-header{position:relative; min-height:60px; padding:0 8px;}
+  .ps-logo{position:absolute; top:50%; transform:translateY(-50%); display:flex; align-items:center; justify-content:center; z-index:2;}
+  .ps-logo.left{left:0;}
+  .ps-logo.right{right:0;}
   .ps-draggable-logo{cursor:grab; user-select:none; -webkit-user-drag:none;}
   .ps-draggable-logo:active{cursor:grabbing;}
-  .ps-logo img{max-width:88px; max-height:88px; object-fit:contain;}
-  .ps-headtext{flex:1; text-align:center;}
+  .ps-logo img{object-fit:contain;}
+  .ps-headtext{width:100%; text-align:center;}
   .ps-republic{font-size:12px;}
   .ps-university{font-size:15px; font-weight:700; margin:2px 0;}
   .ps-address{font-size:12px;}

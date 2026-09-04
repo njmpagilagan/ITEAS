@@ -1916,7 +1916,7 @@ function renderAdminSheet(){
     <div class="print-sheet" id="print-sheet">
       <div class="ps-topline"><span>Reference No.: ${s.refNo}</span><span>Effectivity Date: ${s.effectivityDate}</span><span>Revision No. ${s.revisionNo}</span></div>
       <div class="ps-header">
-        <div class="ps-logo">${s.leftLogo ? `<img class="ps-draggable-logo" data-logo="left" src="${s.leftLogo}" style="width:${s.leftLogoSize}px; height:${s.leftLogoSize}px; transform:translate(${s.leftLogoX}px, ${s.leftLogoY}px);">` : ''}</div>
+        <div class="ps-logo left">${s.leftLogo ? `<img class="ps-draggable-logo" data-logo="left" src="${s.leftLogo}" style="width:${s.leftLogoSize}px; height:${s.leftLogoSize}px; transform:translate(${s.leftLogoX}px, ${s.leftLogoY}px);">` : ''}</div>
         <div class="ps-headtext">
           <div class="ps-republic">Republic of the Philippines</div>
           <div class="ps-university">${s.university}</div>
@@ -1924,7 +1924,7 @@ function renderAdminSheet(){
           <div class="ps-contact">Website: ${s.website} &nbsp; Email address: ${s.email}</div>
           <div class="ps-contact">Tele/Fax: ${s.telfax}</div>
         </div>
-        <div class="ps-logo">${s.rightLogo ? `<img class="ps-draggable-logo" data-logo="right" src="${s.rightLogo}" style="width:${s.rightLogoSize}px; height:${s.rightLogoSize}px; transform:translate(${s.rightLogoX}px, ${s.rightLogoY}px);">` : ''}</div>
+        <div class="ps-logo right">${s.rightLogo ? `<img class="ps-draggable-logo" data-logo="right" src="${s.rightLogo}" style="width:${s.rightLogoSize}px; height:${s.rightLogoSize}px; transform:translate(${s.rightLogoX}px, ${s.rightLogoY}px);">` : ''}</div>
       </div>
       <div class="ps-collegeunit">${s.collegeUnit}</div>
       <div class="ps-title">COLLEGE/OFFICE ACTIVITY/SEMINAR ATTENDANCE SHEET</div>
