@@ -119,7 +119,7 @@ function getEventAttendees(eventId){
   const byStudent = {};
   DB.attendance.forEach(r=>{
     if(r.eventId !== eventId) return;
-    if(!byStudent[r.studentId]) byStudent[r.studentId] = { studentName:r.studentName, department:r.department, section:r.section };
+    if(!byStudent[r.studentId]) byStudent[r.studentId] = { studentName:r.studentName, department:r.department, section:r.section, sex:(DB.users[r.studentId]||{}).sex || '' };
   });
   return Object.values(byStudent).sort((a,b)=>a.studentName.localeCompare(b.studentName));
 }
@@ -363,6 +363,7 @@ function renderStudentAuth(){
     ` : `
       <div class="field"><label>Full name</label><input id="r-name" placeholder="Juan Dela Cruz"></div>
       <div class="field"><label>Student ID</label><input id="r-id" placeholder="e.g. 2023-00451"></div>
+      <div class="field"><label>Sex</label><select id="r-sex"><option value="">Select</option><option value="M">Male</option><option value="F">Female</option></select></div>
       <div class="field"><label>Department</label><select id="r-dept">${DB.departments.map(dep=>`<option>${dep}</option>`).join('')}</select></div>
       <div class="field"><label>Section</label><select id="r-section">${sectionOptions(DB.departments[0], null)}</select></div>
       ${pwField('r-pw', 'Password', 'Create a password')}
@@ -431,13 +432,14 @@ function attachLoginHandlers(){
   if(sReg) sReg.onclick = async ()=>{
     const name = document.getElementById('r-name').value.trim();
     const id = document.getElementById('r-id').value.trim();
+    const sex = document.getElementById('r-sex').value;
     const section = document.getElementById('r-section').value.trim();
     const department = document.getElementById('r-dept').value;
     const pw = document.getElementById('r-pw').value;
-    if(!name || !id || !section || !department || !pw){ state.err='Please fill in every field — if Section only shows "No sections yet," ask the admin to add one for your department first.'; render(); return; }
+    if(!name || !id || !sex || !section || !department || !pw){ state.err='Please fill in every field — if Section only shows "No sections yet," ask the admin to add one for your department first.'; render(); return; }
     DB.users = await fetchKey('users', DB.users);
     if(DB.users[id]){ state.err='An account with that student ID already exists.'; render(); return; }
-    DB.users[id] = {id, role:'student', name, section, department, passwordHash:hashPw(pw)};
+    DB.users[id] = {id, role:'student', name, sex, section, department, passwordHash:hashPw(pw)};
     await saveKey('users', DB.users);
     state.currentUser = DB.users[id]; state.route='student'; state.err=''; startBackgroundSync(); render();
   };
@@ -537,7 +539,7 @@ function attachShellHandlers(){
       if((role==='student' && sub==='history') || ((role==='officer'||role==='ssg') && sub==='attendees') || (role==='admin' && (sub==='overview' || sub==='records' || sub==='analytics' || sub==='sheet'))){
         DB.attendance = await fetchKey('attendance', DB.attendance);
       }
-      if(role==='admin' && sub==='officers'){
+      if(role==='admin' && (sub==='officers' || sub==='sheet')){
         DB.users = await fetchKey('users', DB.users);
       }
       if(role==='admin' && sub==='log'){
@@ -1253,6 +1255,7 @@ function renderProfile(){
     <div class="field"><label>Full name</label><input id="prof-name" value="${u.name}"></div>
     ${u.role==='student' ? `
       <div class="field"><label>Student ID</label><input value="${u.id}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
+      <div class="field"><label>Sex</label><select id="prof-sex"><option value="">Select</option><option value="M" ${u.sex==='M'?'selected':''}>Male</option><option value="F" ${u.sex==='F'?'selected':''}>Female</option></select></div>
       <div class="field"><label>Department</label><select id="prof-dept">${DB.departments.map(dep=>`<option ${u.department===dep?'selected':''}>${dep}</option>`).join('')}</select></div>
       <div class="field"><label>Section</label><select id="prof-section">${sectionOptions(u.department, u.section)}</select></div>
       <div class="hint" style="margin-top:-8px; margin-bottom:10px;">Only your own department and section's QR code will check you in.</div>
@@ -1299,6 +1302,8 @@ function attachProfileHandlers(){
       if(deptEl) u.department = deptEl.value;
       const secEl = document.getElementById('prof-section');
       if(secEl) u.section = secEl.value;
+      const sexEl = document.getElementById('prof-sex');
+      if(sexEl) u.sex = sexEl.value;
     }
     DB.users[u.id] = u;
     await saveKey('users', DB.users);
@@ -1579,6 +1584,7 @@ function renderAdminStudents(){
   <div class="card" style="max-width:480px; margin-bottom:16px;">
     <div class="pill gold" style="margin-bottom:10px;">Editing ${editingUser.id}</div>
     <div class="field"><label>Full name</label><input id="stu-edit-name" value="${editingUser.name}"></div>
+    <div class="field"><label>Sex</label><select id="stu-edit-sex"><option value="">Select</option><option value="M" ${editingUser.sex==='M'?'selected':''}>Male</option><option value="F" ${editingUser.sex==='F'?'selected':''}>Female</option></select></div>
     <div class="field"><label>Department</label><select id="stu-edit-dept">${DB.departments.map(dep=>`<option ${editingUser.department===dep?'selected':''}>${dep}</option>`).join('')}</select></div>
     <div class="field"><label>Section</label><select id="stu-edit-section">${sectionOptions(editingUser.department, editingUser.section)}</select></div>
     ${state.err ? `<div class="err">${state.err}</div>` : ''}
@@ -1602,8 +1608,8 @@ function renderAdminStudents(){
   <div class="section-title">${deptFilter==='all' ? 'All students' : deptFilter} <span class="pill gold">${students.length}</span></div>
   <div class="card" style="padding:0;">
     <table id="student-table">
-      <tr><th>Name</th><th>ID</th><th>Department</th><th>Section</th><th></th></tr>
-      ${pageStudents.map(s=>`<tr><td>${s.name}</td><td class="mono">${s.id}</td><td><span class="badge-dept">${s.department}</span></td><td>${s.section||'—'}</td><td><button class="btn-ghost" data-edit-student="${s.id}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-reset-student="${s.id}">Reset password</button></td></tr>`).join('') || `<tr><td colspan="5" class="empty">No students in ${deptFilter==='all'?'the system':'this department'} yet.</td></tr>`}
+      <tr><th>Name</th><th>ID</th><th style="width:50px;">Sex</th><th>Department</th><th>Section</th><th></th></tr>
+      ${pageStudents.map(s=>`<tr><td>${s.name}</td><td class="mono">${s.id}</td><td>${s.sex || '<span class="pill gold">—</span>'}</td><td><span class="badge-dept">${s.department}</span></td><td>${s.section||'—'}</td><td><button class="btn-ghost" data-edit-student="${s.id}" style="margin-right:6px;">Edit</button><button class="btn-danger" data-reset-student="${s.id}">Reset password</button></td></tr>`).join('') || `<tr><td colspan="6" class="empty">No students in ${deptFilter==='all'?'the system':'this department'} yet.</td></tr>`}
     </table>
   </div>
   ${paginationControls(page, totalPages, 'student')}
@@ -1940,7 +1946,7 @@ function renderOneSheet(s, d, attendeesChunk, pageIndex){
           const att = attendeesChunk ? attendeesChunk[n-1] : null;
           const name = att ? toSentenceCase(att.studentName) : '';
           const office = att ? att.department : '';
-          return `<tr><td>${n}. ${name}</td><td style="text-align:center;"></td><td style="text-align:center;">${att?'Student':''}</td><td style="text-align:center;">${office}</td><td></td></tr>`;
+          return `<tr><td>${n}. ${name}</td><td style="text-align:center;">${att?(att.sex||''):''}</td><td style="text-align:center;">${att?'Student':''}</td><td style="text-align:center;">${office}</td><td></td></tr>`;
         }).join('')}
       </table>
       <div class="ps-footer">
@@ -2355,10 +2361,11 @@ function attachAdminHandlers(){
     const u = DB.users[id];
     if(!u){ state.err='This student no longer exists.'; state.editingStudentId=null; render(); return; }
     const name = document.getElementById('stu-edit-name').value.trim();
+    const sex = document.getElementById('stu-edit-sex').value;
     const department = document.getElementById('stu-edit-dept').value;
     const section = document.getElementById('stu-edit-section').value;
     if(!name || !section){ state.err='Fill in every field.'; render(); return; }
-    u.name = name; u.department = department; u.section = section;
+    u.name = name; u.sex = sex; u.department = department; u.section = section;
     DB.users[id] = u;
     await saveKey('users', DB.users);
     await logAdminAction('Edited student', `${name} (${id})`);
