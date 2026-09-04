@@ -252,6 +252,7 @@ let state = {
   sheetPreviewPage:0,
   sheetZoom:70,
   sheetZoomAuto:true,
+  sheetPreviewModalOpen:false,
   adminFilterDept:'all',
   adminFilterScope:'all',
   profileMsg:'',
@@ -546,7 +547,7 @@ function attachShellHandlers(){
         state.ssgSubRoute = sub;
       }
       if(role==='admin'){ state.adminSubRoute = sub; }
-      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.lastOfficerResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null; state.recordsShown=false; state.showAttendanceStudentId=null; state.attendeesPage=1; state.eventModalOpen=false; state.editingEventId=null; state.sheetSettingsModalOpen=false; state.exportModalOpen=false;
+      state.err=''; state.profileMsg=''; state.lastResetPassword=null; state.lastOfficerResetPassword=null; state.editingStudentId=null; state.editingOfficerUsername=null; state.recordsShown=false; state.showAttendanceStudentId=null; state.attendeesPage=1; state.eventModalOpen=false; state.editingEventId=null; state.sheetSettingsModalOpen=false; state.exportModalOpen=false; state.sheetPreviewModalOpen=false;
       // an account's own department/section may have been changed by admin since login —
       // always refresh it so a stale, already-logged-in session doesn't keep enforcing old rules
       if(role==='officer' || role==='ssg' || role==='student'){
@@ -678,7 +679,7 @@ document.addEventListener('mouseup', handleSheetLogoDragEnd);
 document.addEventListener('touchend', handleSheetLogoDragEnd);
 let sheetResizeDebounce = null;
 window.addEventListener('resize', ()=>{
-  if(!(state.route==='admin' && state.adminSubRoute==='sheet' && state.sheetZoomAuto)) return;
+  if(!(state.route==='admin' && state.adminSubRoute==='sheet' && state.sheetZoomAuto && state.sheetPreviewModalOpen)) return;
   clearTimeout(sheetResizeDebounce);
   sheetResizeDebounce = setTimeout(render, 150);
 });
@@ -2025,35 +2026,37 @@ function renderAdminSheet(){
     <button class="btn-ghost" id="open-sheet-settings-btn">Header &amp; footer settings</button>
   </div>
 
-  <div class="sheet-layout">
-    <div class="card sheet-form-col">
-      <div class="field">
-        <label>Event (optional — fills in real attendee names)</label>
-        <select id="sh-event">
-          <option value="none" ${eventId==='none'?'selected':''}>None — blank sheet</option>
-          ${DB.events.map(e=>`<option value="${e.id}" ${eventId===e.id?'selected':''}>${e.name}</option>`).join('')}
-        </select>
-      </div>
-      ${isWholeDay ? `
-      <div class="field">
-        <label>Session</label>
-        <select id="sh-session">
-          <option value="am" ${session==='am'?'selected':''}>Morning</option>
-          <option value="pm" ${session==='pm'?'selected':''}>Afternoon</option>
-        </select>
-      </div>` : ''}
-      ${isWholeDay ? `<p class="hint">This is a whole-day event, so morning and afternoon get their own separate attendance sheets — switch the Session above to print the other one.</p>` : ''}
-      ${attendees ? `<p class="hint">${attendees.length} student${attendees.length===1?'':'s'} checked in${isWholeDay ? ` for the ${session==='am'?'morning':'afternoon'} session` : ''} — split across <strong>${chunks.length}</strong> sheet${chunks.length===1?'':'s'} (30 per page, same header/footer repeated on each).</p>` : ''}
-      <div class="field"><label>Nature/Title of Meeting/Activity/Seminar</label><input id="sh-title" value="${d.title}"></div>
-      ${!attendees ? `<div class="field"><label>Rows</label><input id="sh-rows" type="number" min="1" max="60" value="${Math.max(1, Math.min(60, parseInt(d.rows,10) || 30))}"></div>` : ''}
-      <div class="field"><label>Date</label><input id="sh-date" value="${d.date}"></div>
-      <div class="field"><label>Time</label><input id="sh-time" value="${d.time}"></div>
-      <div class="field"><label>Venue</label><input id="sh-venue" value="${d.venue}"></div>
-      <button class="btn-gold" style="width:100%;" id="print-sheet-btn">Print / Save as PDF</button>
-      <p class="hint">Opens your browser's print dialog — choose "Save as PDF" there if you want a digital copy instead of printing. Each sheet prints on its own page.</p>
+  <div class="card" style="max-width:640px; margin-bottom:14px;">
+    <div class="field">
+      <label>Event (optional — fills in real attendee names)</label>
+      <select id="sh-event">
+        <option value="none" ${eventId==='none'?'selected':''}>None — blank sheet</option>
+        ${DB.events.map(e=>`<option value="${e.id}" ${eventId===e.id?'selected':''}>${e.name}</option>`).join('')}
+      </select>
     </div>
+    ${isWholeDay ? `
+    <div class="field">
+      <label>Session</label>
+      <select id="sh-session">
+        <option value="am" ${session==='am'?'selected':''}>Morning</option>
+        <option value="pm" ${session==='pm'?'selected':''}>Afternoon</option>
+      </select>
+    </div>` : ''}
+    ${isWholeDay ? `<p class="hint">This is a whole-day event, so morning and afternoon get their own separate attendance sheets — switch the Session above to print the other one.</p>` : ''}
+    ${attendees ? `<p class="hint">${attendees.length} student${attendees.length===1?'':'s'} checked in${isWholeDay ? ` for the ${session==='am'?'morning':'afternoon'} session` : ''} — split across <strong>${chunks.length}</strong> sheet${chunks.length===1?'':'s'} (30 per page, same header/footer repeated on each).</p>` : ''}
+    <div class="field"><label>Nature/Title of Meeting/Activity/Seminar</label><input id="sh-title" value="${d.title}"></div>
+    ${!attendees ? `<div class="field"><label>Rows</label><input id="sh-rows" type="number" min="1" max="60" value="${Math.max(1, Math.min(60, parseInt(d.rows,10) || 30))}"></div>` : ''}
+    <div class="field"><label>Date</label><input id="sh-date" value="${d.date}"></div>
+    <div class="field"><label>Time</label><input id="sh-time" value="${d.time}"></div>
+    <div class="field"><label>Venue</label><input id="sh-venue" value="${d.venue}"></div>
+    <button class="btn-ghost" style="width:100%; margin-bottom:8px;" id="open-sheet-preview-btn">Preview</button>
+    <button class="btn-gold" style="width:100%;" id="print-sheet-btn">Print / Save as PDF</button>
+    <p class="hint">Opens your browser's print dialog — choose "Save as PDF" there if you want a digital copy instead of printing. Each sheet prints on its own page.</p>
+  </div>
 
-    <div class="sheet-preview-col">
+  <div class="sheet-preview-modal${state.sheetPreviewModalOpen ? ' open' : ''}" id="sheet-preview-modal-wrapper">
+    <div class="sheet-preview-modal-inner">
+      <button class="close-x" id="close-sheet-preview-btn">&times;</button>
       <div class="section-title" style="margin-top:0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
         <span>Preview <span class="hint" style="font-weight:400; text-transform:none; letter-spacing:0;">— drag a logo to reposition it, use the settings modal to resize</span></span>
         ${chunks.length>1 ? `
@@ -2063,13 +2066,14 @@ function renderAdminSheet(){
           <button class="btn-ghost" id="sheet-preview-next-btn" ${activePage>=chunks.length-1?'disabled':''}>Next &rarr;</button>
         </span>` : ''}
       </div>
-      <div class="card sheet-zoom-bar" style="display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-bottom:10px; padding:8px 14px;">
+      <div class="sheet-zoom-bar" style="display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-bottom:10px;">
         <button class="btn-ghost" id="sheet-zoom-out-btn" style="padding:4px 12px;">&minus;</button>
         <span class="hint" id="sheet-zoom-label" style="margin:0; min-width:40px; text-align:center;">${state.sheetZoom}%</span>
         <button class="btn-ghost" id="sheet-zoom-in-btn" style="padding:4px 12px;">+</button>
         <button class="btn-ghost" id="sheet-zoom-reset-btn" style="margin-left:6px;">Reset</button>
+        <button class="btn-gold" id="print-sheet-btn-modal" style="margin-left:auto;">Print / Save as PDF</button>
       </div>
-      <div class="card sheet-preview-viewport">
+      <div class="sheet-preview-viewport">
         <div class="print-sheet-container" id="print-sheet" style="display:flex; flex-direction:column; align-items:center; gap:28px; zoom:${state.sheetZoom}%;">
           ${chunks.map((chunk, idx)=>renderOneSheet(s, d, chunk, idx, idx===activePage)).join('')}
         </div>
@@ -2696,7 +2700,7 @@ function attachAdminHandlers(){
   // while auto-fit is on, keep recalculating against the actual rendered viewport — covers the
   // first visit, window resizes, and switching monitors/resolutions, without ever overriding a
   // manual +/-/ adjustment (which turns auto-fit off until Reset is pressed again)
-  if(state.adminSubRoute==='sheet' && state.sheetZoomAuto){
+  if(state.adminSubRoute==='sheet' && state.sheetZoomAuto && state.sheetPreviewModalOpen){
     const fitZoom = computeFitZoom();
     if(fitZoom && fitZoom !== state.sheetZoom){
       state.sheetZoom = fitZoom;
@@ -2723,6 +2727,14 @@ function attachAdminHandlers(){
   };
   const printSheetBtn = document.getElementById('print-sheet-btn');
   if(printSheetBtn) printSheetBtn.onclick = ()=>{ window.print(); };
+  const printSheetBtnModal = document.getElementById('print-sheet-btn-modal');
+  if(printSheetBtnModal) printSheetBtnModal.onclick = ()=>{ window.print(); };
+  const openSheetPreviewBtn = document.getElementById('open-sheet-preview-btn');
+  if(openSheetPreviewBtn) openSheetPreviewBtn.onclick = ()=>{ state.sheetPreviewModalOpen = true; render(); };
+  const closeSheetPreviewBtn = document.getElementById('close-sheet-preview-btn');
+  if(closeSheetPreviewBtn) closeSheetPreviewBtn.onclick = ()=>{ state.sheetPreviewModalOpen = false; render(); };
+  const sheetPreviewModalWrapper = document.getElementById('sheet-preview-modal-wrapper');
+  if(sheetPreviewModalWrapper) sheetPreviewModalWrapper.onclick = (e)=>{ if(e.target === sheetPreviewModalWrapper){ state.sheetPreviewModalOpen = false; render(); } };
 
   if(state.adminSubRoute==='profile') attachProfileHandlers();
   wirePasswordToggles();
