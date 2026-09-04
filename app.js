@@ -114,11 +114,15 @@ function scopePill(scope){
   return `<span class="pill ${cls}">${scopeLabel(scope)}</span>`;
 }
 const ADMIN_PAGE_SIZE = 10;
-function getEventAttendees(eventId){
+function getEventAttendees(eventId, session){
   if(!eventId || eventId==='none') return null;
   const byStudent = {};
   DB.attendance.forEach(r=>{
     if(r.eventId !== eventId) return;
+    // for a whole-day event printed as two separate sheets, only include students who actually
+    // showed up for that specific half of the day, not everyone who attended the event at all
+    if(session==='am' && !r.amTimeIn) return;
+    if(session==='pm' && !r.pmTimeIn) return;
     if(!byStudent[r.studentId]) byStudent[r.studentId] = { studentName:r.studentName, department:r.department, section:r.section, sex:(DB.users[r.studentId]||{}).sex || '' };
   });
   return Object.values(byStudent).sort((a,b)=>a.studentName.localeCompare(b.studentName));
@@ -131,6 +135,16 @@ function chunkArray(arr, size){
 function toTitleCase(str){
   if(!str) return str;
   return str.toLowerCase().split(' ').map(word => word ? word.charAt(0).toUpperCase() + word.slice(1) : word).join(' ');
+}
+function formatDateLong(dateStr){
+  if(!dateStr) return '';
+  const parts = dateStr.split('-');
+  if(parts.length !== 3) return dateStr; // not in YYYY-MM-DD form — show as-is rather than guess
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const [y, m, day] = parts;
+  const monthName = months[parseInt(m,10)-1];
+  if(!monthName) return dateStr;
+  return `${monthName} ${String(parseInt(day,10)).padStart(2,'0')}, ${y}`;
 }
 function paginate(list, page, pageSize){
   const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
@@ -215,7 +229,7 @@ let state = {
   officerRotating:false,
   officerPhase:'in',       // 'in' (time-in) or 'out' (time-out)
   officerSession:'am',     // 'am' or 'pm' (only relevant for whole-day events)
-  newEventDraft:{name:'', date:'', departments:[...DEFAULT_DEPTS], sessionType:'full', sections:[]},
+  newEventDraft:{name:'', date:'', departments:[...DEFAULT_DEPTS], sessionType:'full', sections:[], venue:'', amTime:'', pmTime:''},
   eventModalOpen:false,
   editingEventId:null,
   newOfficerDraft:{name:'', username:'', password:'', department:DEFAULT_DEPTS[0], section:'', type:'section'},
@@ -224,7 +238,7 @@ let state = {
   analyticsPage:1,
   sheetSettingsDraft:null,
   sheetSettingsModalOpen:false,
-  sheetDraft:{title:'', date:'', time:'', venue:'', rows:30, eventId:'none'},
+  sheetDraft:{title:'', date:'', time:'', venue:'', rows:30, eventId:'none', session:null},
   sheetPreviewPage:0,
   adminFilterDept:'all',
   adminFilterScope:'all',
@@ -1467,7 +1481,10 @@ function renderEventModal(){
       <button class="close-x" id="close-event-modal-btn">&times;</button>
       ${editing ? `<div class="pill gold" style="margin-bottom:10px;">Editing event</div>` : `<h3 style="margin-top:0;">Add event</h3>`}
       <div class="field"><label>Event name</label><input id="ev-name" value="${d.name}" placeholder="Foundation Week 2026"></div>
-      <div class="field"><label>Date</label><input id="ev-date" type="date" value="${d.date}"></div>
+      <div class="row">
+        <div class="field" style="flex:1;"><label>Date</label><input id="ev-date" type="date" value="${d.date}"></div>
+        <div class="field" style="flex:1;"><label>Venue</label><input id="ev-venue" value="${d.venue||''}" placeholder="Gymnasium"></div>
+      </div>
       <div class="field">
         <label>Duration</label>
         <div class="auth-tabs" style="margin-bottom:0;">
@@ -1477,6 +1494,16 @@ function renderEventModal(){
         </div>
         <p class="hint">${sessionType==='full' ? 'Students scan 4 times: AM time in/out, then PM time in/out.' : `Students scan 2 times: ${sessionType.toUpperCase()} time in and time out.`}</p>
       </div>
+      ${sessionType==='full' ? `
+      <div class="row">
+        <div class="field" style="flex:1;"><label>Morning time</label><input id="ev-am-time" value="${d.amTime||''}" placeholder="8:00 AM - 12:00 PM"></div>
+        <div class="field" style="flex:1;"><label>Afternoon time</label><input id="ev-pm-time" value="${d.pmTime||''}" placeholder="1:00 PM - 5:00 PM"></div>
+      </div>
+      ` : sessionType==='am' ? `
+      <div class="field"><label>Time</label><input id="ev-am-time" value="${d.amTime||''}" placeholder="8:00 AM - 12:00 PM"></div>
+      ` : `
+      <div class="field"><label>Time</label><input id="ev-pm-time" value="${d.pmTime||''}" placeholder="1:00 PM - 5:00 PM"></div>
+      `}
       <div class="field">
         <label>Participating departments</label>
         ${DB.departments.map(dep=>`
@@ -1965,7 +1992,10 @@ function renderAdminSheet(){
   const s = state.sheetSettingsDraft || DEFAULT_SHEET_SETTINGS;
   const d = state.sheetDraft;
   const eventId = d.eventId || 'none';
-  const attendees = getEventAttendees(eventId);
+  const selectedEvent = eventId!=='none' ? DB.events.find(e=>e.id===eventId) : null;
+  const isWholeDay = selectedEvent && (selectedEvent.sessionType||'full')==='full';
+  const session = isWholeDay ? (d.session || 'am') : null;
+  const attendees = getEventAttendees(eventId, session);
   const chunks = attendees ? chunkArray(attendees, 30) : [null];
   const activePage = Math.max(0, Math.min(chunks.length-1, state.sheetPreviewPage||0));
   return `
@@ -1975,14 +2005,25 @@ function renderAdminSheet(){
   </div>
 
   <div class="card" style="max-width:640px; margin-bottom:14px;">
-    <div class="field">
-      <label>Event (optional — fills in real attendee names)</label>
-      <select id="sh-event">
-        <option value="none" ${eventId==='none'?'selected':''}>None — blank sheet</option>
-        ${DB.events.map(e=>`<option value="${e.id}" ${eventId===e.id?'selected':''}>${e.name}</option>`).join('')}
-      </select>
+    <div class="row">
+      <div class="field" style="flex:2;">
+        <label>Event (optional — fills in real attendee names)</label>
+        <select id="sh-event">
+          <option value="none" ${eventId==='none'?'selected':''}>None — blank sheet</option>
+          ${DB.events.map(e=>`<option value="${e.id}" ${eventId===e.id?'selected':''}>${e.name}</option>`).join('')}
+        </select>
+      </div>
+      ${isWholeDay ? `
+      <div class="field" style="flex:1;">
+        <label>Session</label>
+        <select id="sh-session">
+          <option value="am" ${session==='am'?'selected':''}>Morning</option>
+          <option value="pm" ${session==='pm'?'selected':''}>Afternoon</option>
+        </select>
+      </div>` : ''}
     </div>
-    ${attendees ? `<p class="hint">${attendees.length} student${attendees.length===1?'':'s'} checked in for this event — split across <strong>${chunks.length}</strong> sheet${chunks.length===1?'':'s'} (30 per page, same header/footer repeated on each).</p>` : ''}
+    ${isWholeDay ? `<p class="hint">This is a whole-day event, so morning and afternoon get their own separate attendance sheets — switch the Session above to print the other one.</p>` : ''}
+    ${attendees ? `<p class="hint">${attendees.length} student${attendees.length===1?'':'s'} checked in${isWholeDay ? ` for the ${session==='am'?'morning':'afternoon'} session` : ''} — split across <strong>${chunks.length}</strong> sheet${chunks.length===1?'':'s'} (30 per page, same header/footer repeated on each).</p>` : ''}
     <div class="row">
       <div class="field" style="flex:2;"><label>Nature/Title of Meeting/Activity/Seminar</label><input id="sh-title" value="${d.title}"></div>
       ${!attendees ? `<div class="field" style="flex:1;"><label>Rows</label><input id="sh-rows" type="number" min="1" max="60" value="${Math.max(1, Math.min(60, parseInt(d.rows,10) || 30))}"></div>` : ''}
@@ -2051,6 +2092,12 @@ function attachAdminHandlers(){
   if(nameEl) nameEl.oninput = ()=>{ state.newEventDraft.name = nameEl.value; };
   const dateEl = document.getElementById('ev-date');
   if(dateEl) dateEl.oninput = ()=>{ state.newEventDraft.date = dateEl.value; };
+  const venueEl = document.getElementById('ev-venue');
+  if(venueEl) venueEl.oninput = ()=>{ state.newEventDraft.venue = venueEl.value; };
+  const amTimeEl = document.getElementById('ev-am-time');
+  if(amTimeEl) amTimeEl.oninput = ()=>{ state.newEventDraft.amTime = amTimeEl.value; };
+  const pmTimeEl = document.getElementById('ev-pm-time');
+  if(pmTimeEl) pmTimeEl.oninput = ()=>{ state.newEventDraft.pmTime = pmTimeEl.value; };
   document.querySelectorAll('.ev-session-tab').forEach(el=>{
     el.onclick = ()=>{
       state.newEventDraft.sessionType = el.dataset.session;
@@ -2060,14 +2107,14 @@ function attachAdminHandlers(){
   const openAddEvent = document.getElementById('open-add-event-btn');
   if(openAddEvent) openAddEvent.onclick = ()=>{
     state.eventModalOpen = true;
-    state.newEventDraft = {name:'', date:'', departments:[...DB.departments], sessionType:'full', sections:[]};
+    state.newEventDraft = {name:'', date:'', departments:[...DB.departments], sessionType:'full', sections:[], venue:'', amTime:'', pmTime:''};
     state.err='';
     render();
   };
   const closeEventModal = ()=>{
     state.eventModalOpen = false;
     state.editingEventId = null;
-    state.newEventDraft = {name:'', date:'', departments:[...DB.departments], sessionType:'full', sections:[]};
+    state.newEventDraft = {name:'', date:'', departments:[...DB.departments], sessionType:'full', sections:[], venue:'', amTime:'', pmTime:''};
     state.err='';
     render();
   };
@@ -2085,17 +2132,17 @@ function attachAdminHandlers(){
     if(editing){
       const idx = DB.events.findIndex(e=>e.id===editing);
       if(idx===-1){ state.err='This event no longer exists.'; state.editingEventId=null; render(); return; }
-      DB.events[idx] = {...DB.events[idx], name:d.name, date:d.date, departments:[...d.departments], sessionType: d.sessionType || 'full', sections:[...d.sections]};
+      DB.events[idx] = {...DB.events[idx], name:d.name, date:d.date, departments:[...d.departments], sessionType: d.sessionType || 'full', sections:[...d.sections], venue:d.venue||'', amTime:d.amTime||'', pmTime:d.pmTime||''};
       await saveKey('events', DB.events);
       await logAdminAction('Edited event', d.name);
     } else {
-      DB.events.push({id: uid('evt'), name:d.name, date:d.date, departments:[...d.departments], sessionType: d.sessionType || 'full', sections:[...d.sections]});
+      DB.events.push({id: uid('evt'), name:d.name, date:d.date, departments:[...d.departments], sessionType: d.sessionType || 'full', sections:[...d.sections], venue:d.venue||'', amTime:d.amTime||'', pmTime:d.pmTime||''});
       await saveKey('events', DB.events);
       await logAdminAction('Created event', d.name);
     }
     state.eventModalOpen = false;
     state.editingEventId = null;
-    state.newEventDraft = {name:'', date:'', departments:[...DB.departments], sessionType:'full', sections:[]};
+    state.newEventDraft = {name:'', date:'', departments:[...DB.departments], sessionType:'full', sections:[], venue:'', amTime:'', pmTime:''};
     state.err='';
     render();
   };
@@ -2104,7 +2151,7 @@ function attachAdminHandlers(){
       const ev = DB.events.find(e=>e.id===el.dataset.editEvent);
       if(!ev) return;
       state.editingEventId = ev.id;
-      state.newEventDraft = {name:ev.name, date:ev.date||'', departments:[...ev.departments], sessionType: ev.sessionType || 'full', sections:[...(ev.sections||[])]};
+      state.newEventDraft = {name:ev.name, date:ev.date||'', departments:[...ev.departments], sessionType: ev.sessionType || 'full', sections:[...(ev.sections||[])], venue:ev.venue||'', amTime:ev.amTime||'', pmTime:ev.pmTime||''};
       state.err='';
       render();
     };
@@ -2585,8 +2632,24 @@ function attachAdminHandlers(){
       const ev = DB.events.find(e=>e.id===eventId);
       if(ev){
         if(!state.sheetDraft.title) state.sheetDraft.title = ev.name;
-        if(!state.sheetDraft.date && ev.date) state.sheetDraft.date = ev.date;
+        if(!state.sheetDraft.date && ev.date) state.sheetDraft.date = formatDateLong(ev.date);
+        if(!state.sheetDraft.venue && ev.venue) state.sheetDraft.venue = ev.venue;
+        const isWholeDay = (ev.sessionType||'full')==='full';
+        state.sheetDraft.session = isWholeDay ? (state.sheetDraft.session || 'am') : null;
+        const relevantTime = ev.sessionType==='pm' ? ev.pmTime : (isWholeDay ? (state.sheetDraft.session==='pm' ? ev.pmTime : ev.amTime) : ev.amTime);
+        if(!state.sheetDraft.time && relevantTime) state.sheetDraft.time = relevantTime;
       }
+    }
+    render();
+  };
+  const sheetSessionSelect = document.getElementById('sh-session');
+  if(sheetSessionSelect) sheetSessionSelect.onchange = ()=>{
+    state.sheetDraft.session = sheetSessionSelect.value;
+    state.sheetPreviewPage = 0;
+    const ev = DB.events.find(e=>e.id===state.sheetDraft.eventId);
+    if(ev){
+      const relevantTime = state.sheetDraft.session==='pm' ? ev.pmTime : ev.amTime;
+      if(relevantTime) state.sheetDraft.time = relevantTime; // switching session updates the shown time to match
     }
     render();
   };
