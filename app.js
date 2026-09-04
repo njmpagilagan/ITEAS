@@ -114,6 +114,20 @@ function scopePill(scope){
   return `<span class="pill ${cls}">${scopeLabel(scope)}</span>`;
 }
 const ADMIN_PAGE_SIZE = 10;
+function getEventAttendees(eventId){
+  if(!eventId || eventId==='none') return null;
+  const byStudent = {};
+  DB.attendance.forEach(r=>{
+    if(r.eventId !== eventId) return;
+    if(!byStudent[r.studentId]) byStudent[r.studentId] = { studentName:r.studentName, department:r.department, section:r.section };
+  });
+  return Object.values(byStudent).sort((a,b)=>a.studentName.localeCompare(b.studentName));
+}
+function chunkArray(arr, size){
+  const out = [];
+  for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size));
+  return out;
+}
 function paginate(list, page, pageSize){
   const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
   const clampedPage = Math.min(Math.max(1, page || 1), totalPages);
@@ -206,7 +220,7 @@ let state = {
   analyticsPage:1,
   sheetSettingsDraft:null,
   sheetSettingsModalOpen:false,
-  sheetDraft:{title:'', date:'', time:'', venue:'', rows:30},
+  sheetDraft:{title:'', date:'', time:'', venue:'', rows:30, eventId:'none'},
   adminFilterDept:'all',
   adminFilterScope:'all',
   profileMsg:'',
@@ -515,7 +529,7 @@ function attachShellHandlers(){
       DB.sections = await fetchKey('sections', DB.sections);
       // views that show shared records should always reflect what's actually in the database right now,
       // not just whatever happened to be loaded when this tab was first opened
-      if((role==='student' && sub==='history') || ((role==='officer'||role==='ssg') && sub==='attendees') || (role==='admin' && (sub==='overview' || sub==='records' || sub==='analytics'))){
+      if((role==='student' && sub==='history') || ((role==='officer'||role==='ssg') && sub==='attendees') || (role==='admin' && (sub==='overview' || sub==='records' || sub==='analytics' || sub==='sheet'))){
         DB.attendance = await fetchKey('attendance', DB.attendance);
       }
       if(role==='admin' && sub==='officers'){
@@ -615,9 +629,10 @@ function handleSheetLogoDragMove(e){
     state.sheetSettingsDraft[sheetDragState.key+'LogoX'] = newX;
     state.sheetSettingsDraft[sheetDragState.key+'LogoY'] = newY;
   }
-  if(sheetDragState.img){
-    sheetDragState.img.style.transform = `translate(${newX}px, ${newY}px)`;
-  }
+  // the same logo can appear on multiple printed pages — keep every instance in sync live, not just the one being dragged
+  document.querySelectorAll(`.ps-draggable-logo[data-logo="${sheetDragState.key}"]`).forEach(img=>{
+    img.style.transform = `translate(${newX}px, ${newY}px)`;
+  });
   if(e.cancelable) e.preventDefault();
 }
 function handleSheetLogoDragEnd(){ sheetDragState = null; }
@@ -1886,37 +1901,14 @@ function renderSheetSettingsModal(){
     </div>
   </div>`;
 }
-function renderAdminSheet(){
-  const s = state.sheetSettingsDraft || DEFAULT_SHEET_SETTINGS;
-  const d = state.sheetDraft;
-  const rowCount = Math.max(1, Math.min(60, parseInt(d.rows,10) || 30));
+function renderOneSheet(s, d, attendeesChunk, pageIndex){
+  const rowCount = attendeesChunk ? 30 : Math.max(1, Math.min(60, parseInt(d.rows,10) || 30));
   const rows = Array.from({length: rowCount}, (_, i) => i+1);
   return `
-  <div class="page-head-row">
-    <div class="page-head" style="margin-bottom:0;"><h1>Attendance Sheet</h1><p>A printable, editable paper attendance sheet — for meetings, seminars, or events that need a signed hard copy.</p></div>
-    <button class="btn-ghost" id="open-sheet-settings-btn">Header &amp; footer settings</button>
-  </div>
-
-  <div class="card" style="max-width:640px; margin-bottom:14px;">
-    <div class="row">
-      <div class="field" style="flex:2;"><label>Nature/Title of Meeting/Activity/Seminar</label><input id="sh-title" value="${d.title}"></div>
-      <div class="field" style="flex:1;"><label>Rows</label><input id="sh-rows" type="number" min="1" max="60" value="${rowCount}"></div>
-    </div>
-    <div class="row">
-      <div class="field" style="flex:1;"><label>Date</label><input id="sh-date" value="${d.date}"></div>
-      <div class="field" style="flex:1;"><label>Time</label><input id="sh-time" value="${d.time}"></div>
-      <div class="field" style="flex:1;"><label>Venue</label><input id="sh-venue" value="${d.venue}"></div>
-    </div>
-    <button class="btn-gold" style="width:100%;" id="print-sheet-btn">Print / Save as PDF</button>
-    <p class="hint">Opens your browser's print dialog — choose "Save as PDF" there if you want a digital copy instead of printing.</p>
-  </div>
-
-  <div class="section-title">Preview <span class="hint" style="font-weight:400; text-transform:none; letter-spacing:0;">— drag a logo to reposition it, use the settings modal to resize</span></div>
-  <div class="card" style="overflow-x:auto; background:var(--bg); padding:28px; display:flex; justify-content:center;">
-    <div class="print-sheet" id="print-sheet">
+    <div class="print-sheet">
       <div class="ps-topline"><span>Reference No.: ${s.refNo}</span><span>Effectivity Date: ${s.effectivityDate}</span><span>Revision No. ${s.revisionNo}</span></div>
       <div class="ps-header">
-        <div class="ps-logo left">${s.leftLogo ? `<img class="ps-draggable-logo" data-logo="left" src="${s.leftLogo}" style="width:${s.leftLogoSize}px; height:${s.leftLogoSize}px; transform:translate(${s.leftLogoX}px, ${s.leftLogoY}px);">` : ''}</div>
+        <div class="ps-logo left">${s.leftLogo ? `<img class="ps-draggable-logo" data-logo="left" data-page="${pageIndex}" src="${s.leftLogo}" style="width:${s.leftLogoSize}px; height:${s.leftLogoSize}px; transform:translate(${s.leftLogoX}px, ${s.leftLogoY}px);">` : ''}</div>
         <div class="ps-headtext">
           <div class="ps-republic">Republic of the Philippines</div>
           <div class="ps-university">${s.university}</div>
@@ -1924,7 +1916,7 @@ function renderAdminSheet(){
           <div class="ps-contact">Website: ${s.website} &nbsp; Email address: ${s.email}</div>
           <div class="ps-contact">Tele/Fax: ${s.telfax}</div>
         </div>
-        <div class="ps-logo right">${s.rightLogo ? `<img class="ps-draggable-logo" data-logo="right" src="${s.rightLogo}" style="width:${s.rightLogoSize}px; height:${s.rightLogoSize}px; transform:translate(${s.rightLogoX}px, ${s.rightLogoY}px);">` : ''}</div>
+        <div class="ps-logo right">${s.rightLogo ? `<img class="ps-draggable-logo" data-logo="right" data-page="${pageIndex}" src="${s.rightLogo}" style="width:${s.rightLogoSize}px; height:${s.rightLogoSize}px; transform:translate(${s.rightLogoX}px, ${s.rightLogoY}px);">` : ''}</div>
       </div>
       <div class="ps-collegeunit">${s.collegeUnit}</div>
       <div class="ps-divider"><div class="ps-divider-thick"></div><div class="ps-divider-thin"></div></div>
@@ -1939,7 +1931,12 @@ function renderAdminSheet(){
       </div>
       <table class="ps-table">
         <tr><th>Name</th><th style="width:60px;">Sex</th><th style="width:110px;">Position/Rank</th><th style="width:100px;">Office</th><th style="width:130px;">Signature</th></tr>
-        ${rows.map(n=>`<tr><td>${n}.</td><td></td><td></td><td></td><td></td></tr>`).join('')}
+        ${rows.map(n=>{
+          const att = attendeesChunk ? attendeesChunk[n-1] : null;
+          const name = att ? att.studentName : '';
+          const office = att ? `${att.department}${att.section?(' - '+att.section):''}` : '';
+          return `<tr><td>${n}. ${name}</td><td></td><td>${att?'Student':''}</td><td>${office}</td><td></td></tr>`;
+        }).join('')}
       </table>
       <div class="ps-footer">
         <div class="ps-footer-row">
@@ -1948,9 +1945,49 @@ function renderAdminSheet(){
             <div class="ps-sigline"></div>
             <div class="ps-siglabel">${s.signatureLabel}</div>
           </div>
-          ${s.footerLogo ? `<div class="ps-footer-logo"><img class="ps-draggable-logo" data-logo="footer" src="${s.footerLogo}" style="width:${s.footerLogoWidth}px; height:${s.footerLogoHeight}px; transform:translate(${s.footerLogoX}px, ${s.footerLogoY}px);"></div>` : ''}
+          ${s.footerLogo ? `<div class="ps-footer-logo"><img class="ps-draggable-logo" data-logo="footer" data-page="${pageIndex}" src="${s.footerLogo}" style="width:${s.footerLogoWidth}px; height:${s.footerLogoHeight}px; transform:translate(${s.footerLogoX}px, ${s.footerLogoY}px);"></div>` : ''}
         </div>
       </div>
+    </div>`;
+}
+function renderAdminSheet(){
+  const s = state.sheetSettingsDraft || DEFAULT_SHEET_SETTINGS;
+  const d = state.sheetDraft;
+  const eventId = d.eventId || 'none';
+  const attendees = getEventAttendees(eventId);
+  const chunks = attendees ? chunkArray(attendees, 30) : [null];
+  return `
+  <div class="page-head-row">
+    <div class="page-head" style="margin-bottom:0;"><h1>Attendance Sheet</h1><p>A printable, editable paper attendance sheet — for meetings, seminars, or events that need a signed hard copy.</p></div>
+    <button class="btn-ghost" id="open-sheet-settings-btn">Header &amp; footer settings</button>
+  </div>
+
+  <div class="card" style="max-width:640px; margin-bottom:14px;">
+    <div class="field">
+      <label>Event (optional — fills in real attendee names)</label>
+      <select id="sh-event">
+        <option value="none" ${eventId==='none'?'selected':''}>None — blank sheet</option>
+        ${DB.events.map(e=>`<option value="${e.id}" ${eventId===e.id?'selected':''}>${e.name}</option>`).join('')}
+      </select>
+    </div>
+    ${attendees ? `<p class="hint">${attendees.length} student${attendees.length===1?'':'s'} checked in for this event — split across <strong>${chunks.length}</strong> sheet${chunks.length===1?'':'s'} (30 per page, same header/footer repeated on each).</p>` : ''}
+    <div class="row">
+      <div class="field" style="flex:2;"><label>Nature/Title of Meeting/Activity/Seminar</label><input id="sh-title" value="${d.title}"></div>
+      ${!attendees ? `<div class="field" style="flex:1;"><label>Rows</label><input id="sh-rows" type="number" min="1" max="60" value="${Math.max(1, Math.min(60, parseInt(d.rows,10) || 30))}"></div>` : ''}
+    </div>
+    <div class="row">
+      <div class="field" style="flex:1;"><label>Date</label><input id="sh-date" value="${d.date}"></div>
+      <div class="field" style="flex:1;"><label>Time</label><input id="sh-time" value="${d.time}"></div>
+      <div class="field" style="flex:1;"><label>Venue</label><input id="sh-venue" value="${d.venue}"></div>
+    </div>
+    <button class="btn-gold" style="width:100%;" id="print-sheet-btn">Print / Save as PDF</button>
+    <p class="hint">Opens your browser's print dialog — choose "Save as PDF" there if you want a digital copy instead of printing. Each sheet prints on its own page.</p>
+  </div>
+
+  <div class="section-title">Preview <span class="hint" style="font-weight:400; text-transform:none; letter-spacing:0;">— drag a logo to reposition it, use the settings modal to resize</span></div>
+  <div class="card" style="overflow-x:auto; background:var(--bg); padding:28px;">
+    <div class="print-sheet-container" id="print-sheet" style="display:flex; flex-direction:column; align-items:center; gap:28px;">
+      ${chunks.map((chunk, idx)=>renderOneSheet(s, d, chunk, idx)).join('')}
     </div>
   </div>
   ${state.sheetSettingsModalOpen ? renderSheetSettingsModal() : ''}
@@ -2454,8 +2491,9 @@ function attachAdminHandlers(){
     slider.oninput = ()=>{
       const val = parseInt(slider.value, 10);
       state.sheetSettingsDraft[field] = val;
-      const img = document.querySelector(`.ps-draggable-logo[data-logo="${key}"]`);
-      if(img){ img.style.width = val+'px'; img.style.height = val+'px'; }
+      document.querySelectorAll(`.ps-draggable-logo[data-logo="${key}"]`).forEach(img=>{
+        img.style.width = val+'px'; img.style.height = val+'px';
+      });
       const label = slider.previousElementSibling;
       if(label) label.textContent = `Size (${val}px)`;
     };
@@ -2465,8 +2503,7 @@ function attachAdminHandlers(){
   if(footerWidthSlider) footerWidthSlider.oninput = ()=>{
     const val = parseInt(footerWidthSlider.value, 10);
     state.sheetSettingsDraft.footerLogoWidth = val;
-    const img = document.querySelector('.ps-draggable-logo[data-logo="footer"]');
-    if(img) img.style.width = val+'px';
+    document.querySelectorAll('.ps-draggable-logo[data-logo="footer"]').forEach(img=>{ img.style.width = val+'px'; });
     const label = footerWidthSlider.previousElementSibling;
     if(label) label.textContent = `Width (${val}px)`;
   };
@@ -2474,8 +2511,7 @@ function attachAdminHandlers(){
   if(footerHeightSlider) footerHeightSlider.oninput = ()=>{
     const val = parseInt(footerHeightSlider.value, 10);
     state.sheetSettingsDraft.footerLogoHeight = val;
-    const img = document.querySelector('.ps-draggable-logo[data-logo="footer"]');
-    if(img) img.style.height = val+'px';
+    document.querySelectorAll('.ps-draggable-logo[data-logo="footer"]').forEach(img=>{ img.style.height = val+'px'; });
     const label = footerHeightSlider.previousElementSibling;
     if(label) label.textContent = `Height (${val}px)`;
   };
@@ -2518,6 +2554,20 @@ function attachAdminHandlers(){
     const el = document.getElementById(id);
     if(el) el.oninput = ()=>{ state.sheetDraft[field] = el.value; reRenderPreservingFocus(); };
   });
+  const sheetEventSelect = document.getElementById('sh-event');
+  if(sheetEventSelect) sheetEventSelect.onchange = async ()=>{
+    const eventId = sheetEventSelect.value;
+    state.sheetDraft.eventId = eventId;
+    if(eventId !== 'none'){
+      DB.attendance = await fetchKey('attendance', DB.attendance);
+      const ev = DB.events.find(e=>e.id===eventId);
+      if(ev){
+        if(!state.sheetDraft.title) state.sheetDraft.title = ev.name;
+        if(!state.sheetDraft.date && ev.date) state.sheetDraft.date = ev.date;
+      }
+    }
+    render();
+  };
   const openSheetSettingsBtn = document.getElementById('open-sheet-settings-btn');
   if(openSheetSettingsBtn) openSheetSettingsBtn.onclick = ()=>{ state.sheetSettingsModalOpen = true; state.err=''; render(); };
   const closeSheetSettings = ()=>{ state.sheetSettingsModalOpen = false; state.err=''; render(); };
