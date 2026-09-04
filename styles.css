@@ -275,6 +275,13 @@
   .bar-value{width:70px; text-align:right; font-size:12px; font-weight:700; color:var(--ink-soft); flex-shrink:0;}
   .analytics-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
   @media (max-width:800px){ .analytics-grid{grid-template-columns:1fr;} }
+  .sheet-layout{display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;}
+  .sheet-form-col{flex:1 1 340px; max-width:400px;}
+  .sheet-preview-col{flex:2 1 420px; min-width:0;}
+  @media (max-width:900px){
+    .sheet-layout{flex-direction:column;}
+    .sheet-form-col{max-width:100%; width:100%;}
+  }
   .section-title{font-size:13.5px; font-weight:700; margin:18px 0 8px 0; display:flex; align-items:center; gap:8px;}
   .section-title:first-child{margin-top:0;}
   /* stamp */

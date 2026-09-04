@@ -2004,9 +2004,9 @@ function renderAdminSheet(){
     <button class="btn-ghost" id="open-sheet-settings-btn">Header &amp; footer settings</button>
   </div>
 
-  <div class="card" style="max-width:640px; margin-bottom:14px;">
-    <div class="row">
-      <div class="field" style="flex:2;">
+  <div class="sheet-layout">
+    <div class="card sheet-form-col">
+      <div class="field">
         <label>Event (optional — fills in real attendee names)</label>
         <select id="sh-event">
           <option value="none" ${eventId==='none'?'selected':''}>None — blank sheet</option>
@@ -2014,41 +2014,39 @@ function renderAdminSheet(){
         </select>
       </div>
       ${isWholeDay ? `
-      <div class="field" style="flex:1;">
+      <div class="field">
         <label>Session</label>
         <select id="sh-session">
           <option value="am" ${session==='am'?'selected':''}>Morning</option>
           <option value="pm" ${session==='pm'?'selected':''}>Afternoon</option>
         </select>
       </div>` : ''}
+      ${isWholeDay ? `<p class="hint">This is a whole-day event, so morning and afternoon get their own separate attendance sheets — switch the Session above to print the other one.</p>` : ''}
+      ${attendees ? `<p class="hint">${attendees.length} student${attendees.length===1?'':'s'} checked in${isWholeDay ? ` for the ${session==='am'?'morning':'afternoon'} session` : ''} — split across <strong>${chunks.length}</strong> sheet${chunks.length===1?'':'s'} (30 per page, same header/footer repeated on each).</p>` : ''}
+      <div class="field"><label>Nature/Title of Meeting/Activity/Seminar</label><input id="sh-title" value="${d.title}"></div>
+      ${!attendees ? `<div class="field"><label>Rows</label><input id="sh-rows" type="number" min="1" max="60" value="${Math.max(1, Math.min(60, parseInt(d.rows,10) || 30))}"></div>` : ''}
+      <div class="field"><label>Date</label><input id="sh-date" value="${d.date}"></div>
+      <div class="field"><label>Time</label><input id="sh-time" value="${d.time}"></div>
+      <div class="field"><label>Venue</label><input id="sh-venue" value="${d.venue}"></div>
+      <button class="btn-gold" style="width:100%;" id="print-sheet-btn">Print / Save as PDF</button>
+      <p class="hint">Opens your browser's print dialog — choose "Save as PDF" there if you want a digital copy instead of printing. Each sheet prints on its own page.</p>
     </div>
-    ${isWholeDay ? `<p class="hint">This is a whole-day event, so morning and afternoon get their own separate attendance sheets — switch the Session above to print the other one.</p>` : ''}
-    ${attendees ? `<p class="hint">${attendees.length} student${attendees.length===1?'':'s'} checked in${isWholeDay ? ` for the ${session==='am'?'morning':'afternoon'} session` : ''} — split across <strong>${chunks.length}</strong> sheet${chunks.length===1?'':'s'} (30 per page, same header/footer repeated on each).</p>` : ''}
-    <div class="row">
-      <div class="field" style="flex:2;"><label>Nature/Title of Meeting/Activity/Seminar</label><input id="sh-title" value="${d.title}"></div>
-      ${!attendees ? `<div class="field" style="flex:1;"><label>Rows</label><input id="sh-rows" type="number" min="1" max="60" value="${Math.max(1, Math.min(60, parseInt(d.rows,10) || 30))}"></div>` : ''}
-    </div>
-    <div class="row">
-      <div class="field" style="flex:1;"><label>Date</label><input id="sh-date" value="${d.date}"></div>
-      <div class="field" style="flex:1;"><label>Time</label><input id="sh-time" value="${d.time}"></div>
-      <div class="field" style="flex:1;"><label>Venue</label><input id="sh-venue" value="${d.venue}"></div>
-    </div>
-    <button class="btn-gold" style="width:100%;" id="print-sheet-btn">Print / Save as PDF</button>
-    <p class="hint">Opens your browser's print dialog — choose "Save as PDF" there if you want a digital copy instead of printing. Each sheet prints on its own page.</p>
-  </div>
 
-  <div class="section-title" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
-    <span>Preview <span class="hint" style="font-weight:400; text-transform:none; letter-spacing:0;">— drag a logo to reposition it, use the settings modal to resize</span></span>
-    ${chunks.length>1 ? `
-    <span style="display:flex; align-items:center; gap:10px; text-transform:none; letter-spacing:0; font-weight:400;">
-      <button class="btn-ghost" id="sheet-preview-prev-btn" ${activePage<=0?'disabled':''}>&larr; Prev</button>
-      <span class="hint" style="margin:0;">Page ${activePage+1} of ${chunks.length}</span>
-      <button class="btn-ghost" id="sheet-preview-next-btn" ${activePage>=chunks.length-1?'disabled':''}>Next &rarr;</button>
-    </span>` : ''}
-  </div>
-  <div class="card" style="overflow-x:auto; background:var(--bg); padding:28px;">
-    <div class="print-sheet-container" id="print-sheet" style="display:flex; flex-direction:column; align-items:center; gap:28px;">
-      ${chunks.map((chunk, idx)=>renderOneSheet(s, d, chunk, idx, idx===activePage)).join('')}
+    <div class="sheet-preview-col">
+      <div class="section-title" style="margin-top:0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+        <span>Preview <span class="hint" style="font-weight:400; text-transform:none; letter-spacing:0;">— drag a logo to reposition it, use the settings modal to resize</span></span>
+        ${chunks.length>1 ? `
+        <span style="display:flex; align-items:center; gap:10px; text-transform:none; letter-spacing:0; font-weight:400;">
+          <button class="btn-ghost" id="sheet-preview-prev-btn" ${activePage<=0?'disabled':''}>&larr; Prev</button>
+          <span class="hint" style="margin:0;">Page ${activePage+1} of ${chunks.length}</span>
+          <button class="btn-ghost" id="sheet-preview-next-btn" ${activePage>=chunks.length-1?'disabled':''}>Next &rarr;</button>
+        </span>` : ''}
+      </div>
+      <div class="card" style="overflow-x:auto; background:var(--bg); padding:28px;">
+        <div class="print-sheet-container" id="print-sheet" style="display:flex; flex-direction:column; align-items:center; gap:28px;">
+          ${chunks.map((chunk, idx)=>renderOneSheet(s, d, chunk, idx, idx===activePage)).join('')}
+        </div>
+      </div>
     </div>
   </div>
   ${state.sheetSettingsModalOpen ? renderSheetSettingsModal() : ''}
