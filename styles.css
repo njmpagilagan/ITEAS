@@ -277,7 +277,7 @@
   @media (max-width:800px){ .analytics-grid{grid-template-columns:1fr;} }
   .sheet-layout{display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;}
   .sheet-form-col{flex:1 1 340px; max-width:400px;}
-  .sheet-preview-col{flex:2 1 420px;}
+  .sheet-preview-col{flex:2 1 420px; min-width:0;}
   @media (max-width:900px){
     .sheet-layout{flex-direction:column;}
     .sheet-form-col{max-width:100%; width:100%;}
@@ -413,7 +413,7 @@
     font-family:'Times New Roman', Times, serif;
     padding:36px;
     width:8.5in;
-    max-width:100%;
+    flex-shrink:0;
     box-sizing:border-box;
     box-shadow:0 4px 20px rgba(0,0,0,0.15);
     border:1px solid #d9d9d9;
