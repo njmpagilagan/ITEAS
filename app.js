@@ -128,6 +128,11 @@ function chunkArray(arr, size){
   for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size));
   return out;
 }
+function toSentenceCase(str){
+  if(!str) return str;
+  const lower = str.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
 function paginate(list, page, pageSize){
   const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
   const clampedPage = Math.min(Math.max(1, page || 1), totalPages);
@@ -1930,12 +1935,12 @@ function renderOneSheet(s, d, attendeesChunk, pageIndex){
         </div>
       </div>
       <table class="ps-table">
-        <tr><th>Name</th><th style="width:60px;">Sex</th><th style="width:110px;">Position/Rank</th><th style="width:100px;">Office</th><th style="width:130px;">Signature</th></tr>
+        <tr><th>Name</th><th style="width:60px; text-align:center;">Sex</th><th style="width:110px; text-align:center;">Position/Rank</th><th style="width:100px; text-align:center;">Office</th><th style="width:130px;">Signature</th></tr>
         ${rows.map(n=>{
           const att = attendeesChunk ? attendeesChunk[n-1] : null;
-          const name = att ? att.studentName : '';
-          const office = att ? `${att.department}${att.section?(' - '+att.section):''}` : '';
-          return `<tr><td>${n}. ${name}</td><td></td><td>${att?'Student':''}</td><td>${office}</td><td></td></tr>`;
+          const name = att ? toSentenceCase(att.studentName) : '';
+          const office = att ? att.department : '';
+          return `<tr><td>${n}. ${name}</td><td style="text-align:center;"></td><td style="text-align:center;">${att?'Student':''}</td><td style="text-align:center;">${office}</td><td></td></tr>`;
         }).join('')}
       </table>
       <div class="ps-footer">
