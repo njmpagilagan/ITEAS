@@ -1820,7 +1820,7 @@ function renderSheetSettingsModal(){
           ${s.leftLogo ? `
           <div style="margin-top:8px;">
             <label style="margin-bottom:2px;">Size (${s.leftLogoSize}px)</label>
-            <input type="range" id="left-logo-size" min="30" max="300" value="${s.leftLogoSize}" style="width:100%;">
+            <input type="range" id="left-logo-size" min="30" max="500" value="${s.leftLogoSize}" style="width:100%;">
           </div>
           <button class="btn-ghost" id="remove-left-logo-btn" style="margin-top:6px;">Remove</button>
           <button class="btn-ghost" id="reset-left-logo-pos-btn" style="margin-top:6px;">Reset position</button>
@@ -1833,7 +1833,7 @@ function renderSheetSettingsModal(){
           ${s.rightLogo ? `
           <div style="margin-top:8px;">
             <label style="margin-bottom:2px;">Size (${s.rightLogoSize}px)</label>
-            <input type="range" id="right-logo-size" min="30" max="300" value="${s.rightLogoSize}" style="width:100%;">
+            <input type="range" id="right-logo-size" min="30" max="500" value="${s.rightLogoSize}" style="width:100%;">
           </div>
           <button class="btn-ghost" id="remove-right-logo-btn" style="margin-top:6px;">Remove</button>
           <button class="btn-ghost" id="reset-right-logo-pos-btn" style="margin-top:6px;">Reset position</button>
