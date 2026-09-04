@@ -1927,6 +1927,7 @@ function renderAdminSheet(){
         <div class="ps-logo right">${s.rightLogo ? `<img class="ps-draggable-logo" data-logo="right" src="${s.rightLogo}" style="width:${s.rightLogoSize}px; height:${s.rightLogoSize}px; transform:translate(${s.rightLogoX}px, ${s.rightLogoY}px);">` : ''}</div>
       </div>
       <div class="ps-collegeunit">${s.collegeUnit}</div>
+      <div class="ps-divider"><div class="ps-divider-thick"></div><div class="ps-divider-thin"></div></div>
       <div class="ps-title">COLLEGE/OFFICE ACTIVITY/SEMINAR ATTENDANCE SHEET</div>
       <div class="ps-fields">
         <div>Nature/Title of Meeting/Activity/Seminar: <span class="ps-fill">${d.title}</span></div>

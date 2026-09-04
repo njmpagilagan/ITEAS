@@ -426,8 +426,11 @@
   .ps-contact{font-size:11px;}
   .ps-collegeunit{
     text-align:center; font-family:'Old English Text MT', 'UnifrakturMaguntia', serif; font-size:20px; margin:12px 0 0 0;
-    padding-bottom:8px; border-bottom:3px double #000;
+    padding-bottom:6px;
   }
+  .ps-divider{width:100%;}
+  .ps-divider-thick{height:3px; background:#000; margin-bottom:2px;}
+  .ps-divider-thin{height:1px; background:#000;}
   .ps-title{text-align:center; font-weight:700; font-size:13px; margin:14px 0 12px 0;}
   .ps-fields{font-size:12.5px; margin-bottom:10px;}
   .ps-fields-row{display:flex; gap:24px; margin-top:6px;}
