@@ -128,10 +128,9 @@ function chunkArray(arr, size){
   for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size));
   return out;
 }
-function toSentenceCase(str){
+function toTitleCase(str){
   if(!str) return str;
-  const lower = str.toLowerCase();
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
+  return str.toLowerCase().split(' ').map(word => word ? word.charAt(0).toUpperCase() + word.slice(1) : word).join(' ');
 }
 function paginate(list, page, pageSize){
   const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
@@ -226,6 +225,7 @@ let state = {
   sheetSettingsDraft:null,
   sheetSettingsModalOpen:false,
   sheetDraft:{title:'', date:'', time:'', venue:'', rows:30, eventId:'none'},
+  sheetPreviewPage:0,
   adminFilterDept:'all',
   adminFilterScope:'all',
   profileMsg:'',
@@ -1912,11 +1912,11 @@ function renderSheetSettingsModal(){
     </div>
   </div>`;
 }
-function renderOneSheet(s, d, attendeesChunk, pageIndex){
+function renderOneSheet(s, d, attendeesChunk, pageIndex, isActive){
   const rowCount = attendeesChunk ? 30 : Math.max(1, Math.min(60, parseInt(d.rows,10) || 30));
   const rows = Array.from({length: rowCount}, (_, i) => i+1);
   return `
-    <div class="print-sheet">
+    <div class="print-sheet${isActive ? '' : ' ps-preview-hidden'}">
       <div class="ps-topline"><span>Reference No.: ${s.refNo}</span><span>Effectivity Date: ${s.effectivityDate}</span><span>Revision No. ${s.revisionNo}</span></div>
       <div class="ps-header">
         <div class="ps-logo left">${s.leftLogo ? `<img class="ps-draggable-logo" data-logo="left" data-page="${pageIndex}" src="${s.leftLogo}" style="width:${s.leftLogoSize}px; height:${s.leftLogoSize}px; transform:translate(${s.leftLogoX}px, ${s.leftLogoY}px);">` : ''}</div>
@@ -1944,7 +1944,7 @@ function renderOneSheet(s, d, attendeesChunk, pageIndex){
         <tr><th>Name</th><th style="width:60px; text-align:center;">Sex</th><th style="width:110px; text-align:center;">Position/Rank</th><th style="width:100px; text-align:center;">Office</th><th style="width:130px;">Signature</th></tr>
         ${rows.map(n=>{
           const att = attendeesChunk ? attendeesChunk[n-1] : null;
-          const name = att ? toSentenceCase(att.studentName) : '';
+          const name = att ? toTitleCase(att.studentName) : '';
           const office = att ? att.department : '';
           return `<tr><td>${n}. ${name}</td><td style="text-align:center;">${att?(att.sex||''):''}</td><td style="text-align:center;">${att?'Student':''}</td><td style="text-align:center;">${office}</td><td></td></tr>`;
         }).join('')}
@@ -1967,6 +1967,7 @@ function renderAdminSheet(){
   const eventId = d.eventId || 'none';
   const attendees = getEventAttendees(eventId);
   const chunks = attendees ? chunkArray(attendees, 30) : [null];
+  const activePage = Math.max(0, Math.min(chunks.length-1, state.sheetPreviewPage||0));
   return `
   <div class="page-head-row">
     <div class="page-head" style="margin-bottom:0;"><h1>Attendance Sheet</h1><p>A printable, editable paper attendance sheet — for meetings, seminars, or events that need a signed hard copy.</p></div>
@@ -1995,10 +1996,18 @@ function renderAdminSheet(){
     <p class="hint">Opens your browser's print dialog — choose "Save as PDF" there if you want a digital copy instead of printing. Each sheet prints on its own page.</p>
   </div>
 
-  <div class="section-title">Preview <span class="hint" style="font-weight:400; text-transform:none; letter-spacing:0;">— drag a logo to reposition it, use the settings modal to resize</span></div>
+  <div class="section-title" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+    <span>Preview <span class="hint" style="font-weight:400; text-transform:none; letter-spacing:0;">— drag a logo to reposition it, use the settings modal to resize</span></span>
+    ${chunks.length>1 ? `
+    <span style="display:flex; align-items:center; gap:10px; text-transform:none; letter-spacing:0; font-weight:400;">
+      <button class="btn-ghost" id="sheet-preview-prev-btn" ${activePage<=0?'disabled':''}>&larr; Prev</button>
+      <span class="hint" style="margin:0;">Page ${activePage+1} of ${chunks.length}</span>
+      <button class="btn-ghost" id="sheet-preview-next-btn" ${activePage>=chunks.length-1?'disabled':''}>Next &rarr;</button>
+    </span>` : ''}
+  </div>
   <div class="card" style="overflow-x:auto; background:var(--bg); padding:28px;">
     <div class="print-sheet-container" id="print-sheet" style="display:flex; flex-direction:column; align-items:center; gap:28px;">
-      ${chunks.map((chunk, idx)=>renderOneSheet(s, d, chunk, idx)).join('')}
+      ${chunks.map((chunk, idx)=>renderOneSheet(s, d, chunk, idx, idx===activePage)).join('')}
     </div>
   </div>
   ${state.sheetSettingsModalOpen ? renderSheetSettingsModal() : ''}
@@ -2570,6 +2579,7 @@ function attachAdminHandlers(){
   if(sheetEventSelect) sheetEventSelect.onchange = async ()=>{
     const eventId = sheetEventSelect.value;
     state.sheetDraft.eventId = eventId;
+    state.sheetPreviewPage = 0;
     if(eventId !== 'none'){
       DB.attendance = await fetchKey('attendance', DB.attendance);
       const ev = DB.events.find(e=>e.id===eventId);
@@ -2580,6 +2590,10 @@ function attachAdminHandlers(){
     }
     render();
   };
+  const sheetPrevPageBtn = document.getElementById('sheet-preview-prev-btn');
+  if(sheetPrevPageBtn) sheetPrevPageBtn.onclick = ()=>{ state.sheetPreviewPage = Math.max(0, (state.sheetPreviewPage||0)-1); render(); };
+  const sheetNextPageBtn = document.getElementById('sheet-preview-next-btn');
+  if(sheetNextPageBtn) sheetNextPageBtn.onclick = ()=>{ state.sheetPreviewPage = (state.sheetPreviewPage||0)+1; render(); };
   const openSheetSettingsBtn = document.getElementById('open-sheet-settings-btn');
   if(openSheetSettingsBtn) openSheetSettingsBtn.onclick = ()=>{ state.sheetSettingsModalOpen = true; state.err=''; render(); };
   const closeSheetSettings = ()=>{ state.sheetSettingsModalOpen = false; state.err=''; render(); };
