@@ -1930,7 +1930,7 @@ function renderAdminSheet(){
       <div class="ps-divider"><div class="ps-divider-thick"></div><div class="ps-divider-thin"></div></div>
       <div class="ps-title">COLLEGE/OFFICE ACTIVITY/SEMINAR ATTENDANCE SHEET</div>
       <div class="ps-fields">
-        <div>Nature/Title of Meeting/Activity/Seminar: <span class="ps-fill">${d.title}</span></div>
+        <div>Nature/Title of Meeting/Activity/Seminar: <span class="ps-fill wide">${d.title}</span></div>
         <div class="ps-fields-row">
           <span>Date: <span class="ps-fill short">${d.date}</span></span>
           <span>Time: <span class="ps-fill short">${d.time}</span></span>
