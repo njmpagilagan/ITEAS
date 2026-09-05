@@ -477,7 +477,7 @@ function attachLoginHandlers(){
     if(!name || !id || !sex || !section || !department || !pw){ state.err='Please fill in every field — if Section only shows "No sections yet," ask the admin to add one for your department first.'; render(); return; }
     DB.users = await fetchKey('users', DB.users);
     if(DB.users[id]){ state.err='An account with that student ID already exists.'; render(); return; }
-    DB.users[id] = {id, role:'student', name, sex, section, department, passwordHash:hashPw(pw)};
+    DB.users[id] = {id, role:'student', name: toTitleCase(name), sex, section, department, passwordHash:hashPw(pw)};
     await saveKey('users', DB.users);
     state.currentUser = DB.users[id]; state.route='student'; state.err=''; startBackgroundSync(); render();
   };
@@ -2296,7 +2296,7 @@ function attachAdminHandlers(){
   if(officerModalOverlay) officerModalOverlay.onclick = (e)=>{ if(e.target === officerModalOverlay) closeOfficerModal(); };
   const createOf = document.getElementById('create-officer-btn');
   if(createOf) createOf.onclick = async ()=>{
-    const name = document.getElementById('of-name').value.trim();
+    const name = toTitleCase(document.getElementById('of-name').value.trim());
     const username = document.getElementById('of-user').value.trim();
     const pw = document.getElementById('of-pw').value;
     const editing = state.editingOfficerUsername;
@@ -2551,7 +2551,7 @@ function attachAdminHandlers(){
     const id = state.editingStudentId;
     const u = DB.users[id];
     if(!u){ state.err='This student no longer exists.'; state.editingStudentId=null; render(); return; }
-    const name = document.getElementById('stu-edit-name').value.trim();
+    const name = toTitleCase(document.getElementById('stu-edit-name').value.trim());
     const sex = document.getElementById('stu-edit-sex').value;
     const department = document.getElementById('stu-edit-dept').value;
     const section = document.getElementById('stu-edit-section').value;
