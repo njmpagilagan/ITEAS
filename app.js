@@ -261,6 +261,7 @@ let state = {
   sheetZoomAuto:true,
   sheetPreviewModalOpen:false,
   adminFilterDept:'all',
+  adminFilterSection:'all',
   adminFilterScope:'all',
   profileMsg:'',
   editingOfficerUsername:null,
@@ -1815,9 +1816,12 @@ function renderAdminRecords(){
   const depts = ['all', ...DB.departments];
   const scopes = ['all', 'section', 'department', 'ssg'];
   const scopeFilter = state.adminFilterScope || 'all';
+  const sectionFilter = state.adminFilterSection || 'all';
+  const sectionsForDept = state.adminFilterDept!=='all' ? (DB.sections[state.adminFilterDept]||[]) : [];
   let rows = DB.attendance.slice();
   if(state.adminFilterEvent!=='all') rows = rows.filter(r=>r.eventId===state.adminFilterEvent);
   if(state.adminFilterDept!=='all') rows = rows.filter(r=>r.department===state.adminFilterDept);
+  if(sectionFilter!=='all') rows = rows.filter(r=>normSection(r.section)===normSection(sectionFilter));
   if(scopeFilter!=='all') rows = rows.filter(r=>r.scope===scopeFilter);
   const canBulkReset = state.adminFilterEvent !== 'all';
   const filterEventName = state.adminFilterEvent==='all' ? 'all' : ((DB.events.find(e=>e.id===state.adminFilterEvent)||{}).name || 'this event');
@@ -1847,6 +1851,11 @@ function renderAdminRecords(){
         <select id="filter-scope">${scopes.map(s=>`<option value="${s}" ${scopeFilter===s?'selected':''}>${s==='all'?'all':scopeLabel(s)}</option>`).join('')}</select>
       </div>
     </div>
+    ${sectionsForDept.length>0 ? `
+    <div class="section-tab-row">
+      <button class="section-tab ${sectionFilter==='all'?'active':''}" data-section="all">All sections</button>
+      ${sectionsForDept.map(sec=>`<button class="section-tab ${normSection(sectionFilter)===normSection(sec)?'active':''}" data-section="${sec}">${sec}</button>`).join('')}
+    </div>` : ''}
   </div>
   <div style="margin-bottom:10px; display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
     ${canBulkReset ? `<button class="btn-gold" id="export-attendees-btn" ${studentRows.length===0?'disabled':''}>Export attendee list (${studentRows.length})</button>` : ''}
@@ -1854,7 +1863,7 @@ function renderAdminRecords(){
   </div>
   <div style="margin-bottom:10px;">
     ${canBulkReset ? `
-      <p class="hint">Clears attendance for <strong>${filterEventName}</strong>${state.adminFilterDept!=='all'?` in ${state.adminFilterDept}`:' across every department'}${scopeFilter!=='all'?` (${scopeLabel(scopeFilter)} desk only)`:''} — students will need to scan in again from scratch.</p>
+      <p class="hint">Clears attendance for <strong>${filterEventName}</strong>${state.adminFilterDept!=='all'?` in ${state.adminFilterDept}`:' across every department'}${sectionFilter!=='all'?` (${sectionFilter} only)`:''}${scopeFilter!=='all'?` (${scopeLabel(scopeFilter)} desk only)`:''} — students will need to scan in again from scratch.</p>
     ` : `
       <p class="hint">Select a specific event above to export its attendee list or reset all of its attendance at once.</p>
     `}
@@ -2353,9 +2362,12 @@ function attachAdminHandlers(){
   const fe = document.getElementById('filter-event');
   if(fe) fe.onchange = async ()=>{ state.adminFilterEvent = fe.value; state.recordsPage = 1; DB.attendance = await fetchKey('attendance', DB.attendance); render(); };
   const fd = document.getElementById('filter-dept');
-  if(fd) fd.onchange = ()=>{ state.adminFilterDept = fd.value; state.recordsPage = 1; render(); };
+  if(fd) fd.onchange = ()=>{ state.adminFilterDept = fd.value; state.adminFilterSection = 'all'; state.recordsPage = 1; render(); };
   const fs = document.getElementById('filter-scope');
   if(fs) fs.onchange = ()=>{ state.adminFilterScope = fs.value; state.recordsPage = 1; render(); };
+  document.querySelectorAll('.section-tab').forEach(el=>{
+    el.onclick = ()=>{ state.adminFilterSection = el.dataset.section; state.recordsPage = 1; render(); };
+  });
   document.querySelectorAll('[data-show-attendance]').forEach(el=>{
     el.onclick = ()=>{
       state.showAttendanceStudentId = el.dataset.showAttendance;
