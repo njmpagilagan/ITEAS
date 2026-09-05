@@ -114,15 +114,16 @@ function scopePill(scope){
   return `<span class="pill ${cls}">${scopeLabel(scope)}</span>`;
 }
 const ADMIN_PAGE_SIZE = 10; // fallback only — see getAutoPageSize() below, used everywhere instead
-function getAutoPageSize(){
+function getAutoPageSize(chromeReserve){
   // estimates how many table rows fit in the visible viewport without scrolling, so the page
   // size adapts to whatever screen the admin is using instead of a fixed count. This is a
-  // heuristic based on window height, not a pixel-perfect DOM measurement — it reserves a
-  // typical amount of space for the nav header, page title, toolbar/filters, and pagination
-  // controls, then divides the remaining height by a typical row height.
+  // heuristic based on window height, not a pixel-perfect DOM measurement — chromeReserve is
+  // tuned per page to roughly match how much toolbar/filter UI sits above that page's table,
+  // since a one-size-fits-all reserve under-counts space on simpler pages (like Activity Log)
+  // and over-counts it on pages with heavier filter toolbars.
   const rowHeightEstimate = 44;
-  const chromeReserve = 430;
-  const available = window.innerHeight - chromeReserve;
+  const reserve = chromeReserve != null ? chromeReserve : 430;
+  const available = window.innerHeight - reserve;
   return Math.max(5, Math.floor(available / rowHeightEstimate));
 }
 let adminPageSizeResizeDebounce = null;
@@ -286,11 +287,32 @@ function sectionOptions(dept, selected){
 function render(){
   const app = document.getElementById('app');
   if(state.route==='login'){ app.innerHTML = renderLogin(); attachLoginHandlers(); return; }
-  if(state.route==='student'){ app.innerHTML = renderShell(renderStudent()); attachShellHandlers(); attachStudentHandlers(); return; }
-  if(state.route==='officer'){ app.innerHTML = renderShell(renderOfficer()); attachShellHandlers(); attachOfficerHandlers(); return; }
-  if(state.route==='ssg'){ app.innerHTML = renderShell(renderSsg()); attachShellHandlers(); attachSsgHandlers(); return; }
-  if(state.route==='admin'){ app.innerHTML = renderShell(renderAdmin()); attachShellHandlers(); attachAdminHandlers(); return; }
+  if(state.route==='student'){ app.innerHTML = renderShell(renderStudent()); attachShellHandlers(); attachStudentHandlers(); autoFitMainContent(); return; }
+  if(state.route==='officer'){ app.innerHTML = renderShell(renderOfficer()); attachShellHandlers(); attachOfficerHandlers(); autoFitMainContent(); return; }
+  if(state.route==='ssg'){ app.innerHTML = renderShell(renderSsg()); attachShellHandlers(); attachSsgHandlers(); autoFitMainContent(); return; }
+  if(state.route==='admin'){ app.innerHTML = renderShell(renderAdmin()); attachShellHandlers(); attachAdminHandlers(); autoFitMainContent(); return; }
 }
+/* shrinks the main content area just enough to avoid needing a scrollbar, as a safety net for
+   whatever pagination and layout spacing don't already handle on their own. Auto-pagination
+   above is the primary mechanism for tables; this covers everything else (forms, cards, stat
+   grids) that isn't naturally page-able. Floors at 75% so content never becomes illegibly
+   small — if it still doesn't fit even there, a scrollbar is the more usable fallback. */
+function autoFitMainContent(){
+  const main = document.querySelector('.main');
+  if(!main) return;
+  main.style.zoom = '100%'; // reset first so scrollHeight reflects the true, unzoomed size
+  const available = main.clientHeight;
+  const natural = main.scrollHeight;
+  if(available>0 && natural > available){
+    const pct = Math.max(75, Math.floor((available / natural) * 100));
+    main.style.zoom = pct + '%';
+  }
+}
+let mainFitResizeDebounce = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(mainFitResizeDebounce);
+  mainFitResizeDebounce = setTimeout(autoFitMainContent, 200);
+});
 
 /* ---------------- LOGIN ---------------- */
 function pwField(id, label, placeholder){
@@ -916,7 +938,7 @@ function renderOfficerAttendees(myEvents){
   const myScope = mySection ? 'section' : 'department';
   const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id && a.scope===myScope && a.department===state.currentUser.department && (!mySection || normSection(a.section)===normSection(mySection))).sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0)) : [];
   const complete = rows.filter(r=>(r.amTimeIn&&r.amTimeOut)||(r.pmTimeIn&&r.pmTimeOut)).length;
-  const { items: pageRows, totalPages, page } = paginate(rows, state.attendeesPage, getAutoPageSize());
+  const { items: pageRows, totalPages, page } = paginate(rows, state.attendeesPage, getAutoPageSize(520));
   return `
   <div class="page-head"><h1>Attendees</h1><p>Live list for ${mySection ? "your section's desk" : "your whole department's desk"} — only check-ins made through your own QR, not other desks.</p></div>
   ${myEvents.length===0 ? `<div class="empty">No events yet.</div>` : `
@@ -1017,7 +1039,7 @@ function renderSsgAttendees(allEvents){
   const ev = allEvents.find(e=>e.id===activeId);
   const rows = ev ? DB.attendance.filter(a=>a.eventId===ev.id && a.scope==='ssg').sort((a,b)=>(b.amTimeIn||b.pmTimeIn||0)-(a.amTimeIn||a.pmTimeIn||0)) : [];
   const complete = rows.filter(r=>(r.amTimeIn&&r.amTimeOut)||(r.pmTimeIn&&r.pmTimeOut)).length;
-  const { items: pageRows, totalPages, page } = paginate(rows, state.attendeesPage, getAutoPageSize());
+  const { items: pageRows, totalPages, page } = paginate(rows, state.attendeesPage, getAutoPageSize(520));
   return `
   <div class="page-head"><h1>Attendees</h1><p>Live list across every department and section for this event — only check-ins made through the SSG desk, not individual department/section desks.</p></div>
   ${allEvents.length===0 ? `<div class="empty">No events yet.</div>` : `
@@ -1393,7 +1415,7 @@ function renderAdminAnalytics(){
     return { id, name, date, total:c.total, complete:c.complete, rate: c.total ? Math.round((c.complete/c.total)*100) : 0 };
   }).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 
-  const { items: pageEvents, totalPages, page } = paginate(eventRows, state.analyticsPage, getAutoPageSize());
+  const { items: pageEvents, totalPages, page } = paginate(eventRows, state.analyticsPage, getAutoPageSize(560));
   const rateClass = r => r>=75 ? 'green' : r>=40 ? 'gold' : 'danger';
 
   return `
@@ -1566,7 +1588,7 @@ function renderAdminStudents(){
   const editing = state.editingStudentId;
   const editingUser = editing ? DB.users[editing] : null;
   const reset = state.lastResetPassword;
-  const { items: pageStudents, totalPages, page } = paginate(students, state.studentPage, getAutoPageSize());
+  const { items: pageStudents, totalPages, page } = paginate(students, state.studentPage, getAutoPageSize(460));
   return `
   <div class="page-head"><h1>Manage Students</h1><p>Update account details or reset a student's password.</p></div>
   ${reset ? `
@@ -1685,7 +1707,7 @@ function renderAdminOfficers(){
   if(q) filtered = filtered.filter(o=>(o.name+' '+o.username).toLowerCase().includes(q));
   const countForDept = dep => dep==='all' ? typedOfficers.length : dep==='ssg' ? typedOfficers.filter(o=>o.oType==='ssg').length : typedOfficers.filter(o=>o.department===dep).length;
   const pillFor = t => t==='ssg' ? '<span class="pill gold">SSG</span>' : t==='department' ? '<span class="pill navy">Department</span>' : '<span class="pill green">Section</span>';
-  const { items: officers, totalPages, page } = paginate(filtered, state.officerPage, getAutoPageSize());
+  const { items: officers, totalPages, page } = paginate(filtered, state.officerPage, getAutoPageSize(460));
   const reset = state.lastOfficerResetPassword;
   return `
   <div class="page-head-row">
@@ -1796,7 +1818,7 @@ function renderAdminRecords(){
     byStudent[r.studentId].latest = Math.max(byStudent[r.studentId].latest, r.amTimeIn||0, r.pmTimeIn||0);
   });
   const studentRows = Object.values(byStudent).sort((a,b)=>b.latest-a.latest);
-  const { items: pageStudents, totalPages, page } = paginate(studentRows, state.recordsPage, getAutoPageSize());
+  const { items: pageStudents, totalPages, page } = paginate(studentRows, state.recordsPage, getAutoPageSize(500));
   return `
   <div class="page-head"><h1>All Records</h1><p>Full attendance log across every event, department, and desk (section, department, or SSG).</p></div>
   <div class="card" style="max-width:760px; margin-bottom:10px;">
@@ -1862,7 +1884,7 @@ function renderExportModal(studentRows, eventName){
 }
 function renderAdminLog(){
   const log = DB.adminLog || [];
-  const { items: pageEntries, totalPages, page } = paginate(log, state.logPage, getAutoPageSize());
+  const { items: pageEntries, totalPages, page } = paginate(log, state.logPage, getAutoPageSize(260));
   return `
   <div class="page-head"><h1>Activity Log</h1><p>A record of actions taken from the admin panel — who did what, and when. Keeps the most recent 200 entries.</p></div>
   <div class="card" style="padding:0;">
