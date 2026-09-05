@@ -10,7 +10,9 @@
 function renderSsgOfficerSheet(){
   const s = state.sheetSettingsDraft || DEFAULT_SHEET_SETTINGS;
   const d = state.sheetDraft;
-  const allEvents = DB.events; // SSG sees every event, same as Generate QR / Attendees
+  // SSG sees every event, same as Generate QR / Attendees — except events restricted to
+  // specific sections, which have no meaningful representation on a school-wide sheet
+  const allEvents = DB.events.filter(e=>!(e.sections && e.sections.length>0));
   const eventId = d.eventId || 'none';
   const selectedEvent = eventId!=='none' ? allEvents.find(e=>e.id===eventId) : null;
   const isWholeDay = selectedEvent && (selectedEvent.sessionType||'full')==='full';
@@ -58,7 +60,7 @@ function renderSsgOfficerSheet(){
 }
 
 function attachSsgOfficerSheetHandlers(){
-  const allEvents = DB.events;
+  const allEvents = DB.events.filter(e=>!(e.sections && e.sections.length>0));
   const sheetEventSelect = document.getElementById('sh-event');
   if(sheetEventSelect) sheetEventSelect.onchange = async ()=>{
     const eventId = sheetEventSelect.value;

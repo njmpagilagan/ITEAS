@@ -14,7 +14,13 @@ function renderDeptOfficerSheet(){
   const s = state.sheetSettingsDraft || DEFAULT_SHEET_SETTINGS;
   const d = state.sheetDraft;
   // same event-visibility rule officers already use for Generate QR / Attendees
-  const myEvents = DB.events.filter(e=>e.departments.includes(u.department));
+  const myEvents = DB.events.filter(e=>{
+    if(!e.departments.includes(u.department)) return false;
+    // an event restricted to specific sections is for those sections only — a department-wide
+    // attendance sheet has no meaningful way to represent a section-only event, so it's excluded
+    if(e.sections && e.sections.length>0) return false;
+    return true;
+  });
   const eventId = d.eventId || 'none';
   const selectedEvent = eventId!=='none' ? myEvents.find(e=>e.id===eventId) : null;
   const isWholeDay = selectedEvent && (selectedEvent.sessionType||'full')==='full';
@@ -63,7 +69,13 @@ function renderDeptOfficerSheet(){
 
 function attachDeptOfficerSheetHandlers(){
   const u = state.currentUser;
-  const myEvents = DB.events.filter(e=>e.departments.includes(u.department));
+  const myEvents = DB.events.filter(e=>{
+    if(!e.departments.includes(u.department)) return false;
+    // an event restricted to specific sections is for those sections only — a department-wide
+    // attendance sheet has no meaningful way to represent a section-only event, so it's excluded
+    if(e.sections && e.sections.length>0) return false;
+    return true;
+  });
   const sheetEventSelect = document.getElementById('sh-event');
   if(sheetEventSelect) sheetEventSelect.onchange = async ()=>{
     const eventId = sheetEventSelect.value;
