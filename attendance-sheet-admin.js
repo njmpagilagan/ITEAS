@@ -15,7 +15,7 @@ function renderAdminSheet(){
   const isWholeDay = selectedEvent && (selectedEvent.sessionType||'full')==='full';
   const session = isWholeDay ? (d.session || 'am') : null;
   const attendees = getEventAttendees(eventId, session);
-  const chunks = attendees ? chunkArray(attendees, 30) : [null];
+  const chunks = (attendees && attendees.length>0) ? chunkArray(attendees, 30) : [null];
   const activePage = Math.max(0, Math.min(chunks.length-1, state.sheetPreviewPage||0));
   return `
   <div class="page-head-row">

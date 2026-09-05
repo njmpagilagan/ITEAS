@@ -15,12 +15,12 @@ function renderSsgOfficerSheet(){
   const selectedEvent = eventId!=='none' ? allEvents.find(e=>e.id===eventId) : null;
   const isWholeDay = selectedEvent && (selectedEvent.sessionType||'full')==='full';
   const session = isWholeDay ? (d.session || 'am') : null;
-  const attendees = getEventAttendees(eventId, session, 'ssg', null);
-  const chunks = attendees ? chunkArray(attendees, 30) : [null];
+  const attendees = getEventAttendees(eventId, session, null, null);
+  const chunks = (attendees && attendees.length>0) ? chunkArray(attendees, 30) : [null];
   const activePage = Math.max(0, Math.min(chunks.length-1, state.sheetPreviewPage||0));
   return `
   <div class="page-head-row">
-    <div class="page-head" style="margin-bottom:0;"><h1>Attendance Sheet</h1><p>A printable attendance sheet across every department — only includes students who checked in through the SSG desk.</p></div>
+    <div class="page-head" style="margin-bottom:0;"><h1>Attendance Sheet</h1><p>A printable attendance sheet across every department — includes every student who attended this event, through any desk.</p></div>
     <button class="btn-ghost" id="open-sheet-settings-btn">Header &amp; footer settings</button>
   </div>
 
@@ -41,7 +41,7 @@ function renderSsgOfficerSheet(){
       </select>
     </div>` : ''}
     ${isWholeDay ? `<p class="hint">This is a whole-day event, so morning and afternoon get their own separate attendance sheets — switch the Session above to print the other one.</p>` : ''}
-    ${attendees ? `<p class="hint">${attendees.length} student${attendees.length===1?'':'s'} checked in via SSG${isWholeDay ? ` for the ${session==='am'?'morning':'afternoon'} session` : ''} — split across <strong>${chunks.length}</strong> sheet${chunks.length===1?'':'s'} (30 per page, same header/footer repeated on each).</p>` : ''}
+    ${attendees ? `<p class="hint">${attendees.length} student${attendees.length===1?'':'s'} checked in${isWholeDay ? ` for the ${session==='am'?'morning':'afternoon'} session` : ''} — split across <strong>${chunks.length}</strong> sheet${chunks.length===1?'':'s'} (30 per page, same header/footer repeated on each).</p>` : ''}
     <div class="field"><label>Nature/Title of Meeting/Activity/Seminar</label><input id="sh-title" value="${d.title}"></div>
     ${!attendees ? `<div class="field"><label>Rows</label><input id="sh-rows" type="number" min="1" max="60" value="${Math.max(1, Math.min(60, parseInt(d.rows,10) || 30))}"></div>` : ''}
     <div class="field"><label>Date</label><input id="sh-date" value="${d.date}"></div>

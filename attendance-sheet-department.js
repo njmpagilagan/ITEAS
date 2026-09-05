@@ -19,12 +19,12 @@ function renderDeptOfficerSheet(){
   const selectedEvent = eventId!=='none' ? myEvents.find(e=>e.id===eventId) : null;
   const isWholeDay = selectedEvent && (selectedEvent.sessionType||'full')==='full';
   const session = isWholeDay ? (d.session || 'am') : null;
-  const attendees = getEventAttendees(eventId, session, 'department', u.department);
-  const chunks = attendees ? chunkArray(attendees, 30) : [null];
+  const attendees = getEventAttendees(eventId, session, null, u.department);
+  const chunks = (attendees && attendees.length>0) ? chunkArray(attendees, 30) : [null];
   const activePage = Math.max(0, Math.min(chunks.length-1, state.sheetPreviewPage||0));
   return `
   <div class="page-head-row">
-    <div class="page-head" style="margin-bottom:0;"><h1>Attendance Sheet</h1><p>A printable attendance sheet for <strong>${u.department}</strong> — only includes students who checked in through your department's own desk.</p></div>
+    <div class="page-head" style="margin-bottom:0;"><h1>Attendance Sheet</h1><p>A printable attendance sheet for <strong>${u.department}</strong> — includes every student from your department who attended, regardless of which desk (section or department) checked them in.</p></div>
     <button class="btn-ghost" id="open-sheet-settings-btn">Header &amp; footer settings</button>
   </div>
 
