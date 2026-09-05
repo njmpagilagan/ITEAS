@@ -226,7 +226,6 @@ let state = {
   studentSectionFilter:'all',
   studentSearchQuery:'',
   studentPage:1,
-  officerTypeFilter:'all',
   officerDeptFilter:'all',
   officerSectionFilter:'all',
   officerModalOpen:false,
@@ -1651,18 +1650,21 @@ function renderAdminOfficers(){
   const modalOpen = state.officerModalOpen || !!state.editingOfficerUsername;
   const allOfficers = Object.values(DB.users).filter(u=>u.role==='officer' || u.role==='ssg');
   const typedOfficers = allOfficers.map(o=>({...o, oType: o.role==='ssg' ? 'ssg' : (o.section ? 'section' : 'department')}));
-  const typeFilter = state.officerTypeFilter || 'all';
   const officerDeptFilter = state.officerDeptFilter || 'all';
   const officerSectionFilter = state.officerSectionFilter || 'all';
-  let filtered = typeFilter==='all' ? typedOfficers : typedOfficers.filter(o=>o.oType===typeFilter);
-  const sectionsForOfficerDept = (typeFilter==='section' && officerDeptFilter!=='all') ? (DB.sections[officerDeptFilter]||[]) : [];
-  if(typeFilter==='section'){
-    if(officerDeptFilter!=='all') filtered = filtered.filter(o=>o.department===officerDeptFilter);
-    if(officerDeptFilter!=='all' && officerSectionFilter!=='all') filtered = filtered.filter(o=>normSection(o.section)===normSection(officerSectionFilter));
+  let filtered = typedOfficers;
+  if(officerDeptFilter==='ssg'){
+    filtered = filtered.filter(o=>o.oType==='ssg');
+  } else if(officerDeptFilter!=='all'){
+    filtered = filtered.filter(o=>o.department===officerDeptFilter);
+    if(officerSectionFilter!=='all'){
+      filtered = filtered.filter(o=>o.oType==='section' && normSection(o.section)===normSection(officerSectionFilter));
+    }
   }
+  const sectionsForOfficerDept = (officerDeptFilter!=='all' && officerDeptFilter!=='ssg') ? (DB.sections[officerDeptFilter]||[]) : [];
   const q = (state.officerSearchQuery||'').trim().toLowerCase();
   if(q) filtered = filtered.filter(o=>(o.name+' '+o.username).toLowerCase().includes(q));
-  const countFor = t => t==='all' ? typedOfficers.length : typedOfficers.filter(o=>o.oType===t).length;
+  const countForDept = dep => dep==='all' ? typedOfficers.length : dep==='ssg' ? typedOfficers.filter(o=>o.oType==='ssg').length : typedOfficers.filter(o=>o.department===dep).length;
   const pillFor = t => t==='ssg' ? '<span class="pill gold">SSG</span>' : t==='department' ? '<span class="pill navy">Department</span>' : '<span class="pill green">Section</span>';
   const { items: officers, totalPages, page } = paginate(filtered, state.officerPage, ADMIN_PAGE_SIZE);
   const reset = state.lastOfficerResetPassword;
@@ -1685,31 +1687,21 @@ function renderAdminOfficers(){
   ` : ''}
   <div class="card student-toolbar">
     <div class="dept-chip-row">
-      <button class="officer-type-filter-btn dept-chip ${typeFilter==='all'?'active':''}" data-type="all">All officers <span class="chip-count">${countFor('all')}</span></button>
-      <button class="officer-type-filter-btn dept-chip ${typeFilter==='section'?'active':''}" data-type="section">Section <span class="chip-count">${countFor('section')}</span></button>
-      <button class="officer-type-filter-btn dept-chip ${typeFilter==='department'?'active':''}" data-type="department">Department <span class="chip-count">${countFor('department')}</span></button>
-      <button class="officer-type-filter-btn dept-chip ${typeFilter==='ssg'?'active':''}" data-type="ssg">SSG <span class="chip-count">${countFor('ssg')}</span></button>
-    </div>
-    ${typeFilter==='section' ? `
-    <div class="field" style="max-width:260px;">
-      <label>Department</label>
-      <select id="officer-dept-filter">
-        <option value="all" ${officerDeptFilter==='all'?'selected':''}>All departments</option>
-        ${DB.departments.map(dep=>`<option ${officerDeptFilter===dep?'selected':''}>${dep}</option>`).join('')}
-      </select>
+      <button class="dept-chip ${officerDeptFilter==='all'?'active':''}" data-officer-dept="all">All officers <span class="chip-count">${countForDept('all')}</span></button>
+      ${DB.departments.map(dep=>`<button class="dept-chip ${officerDeptFilter===dep?'active':''}" data-officer-dept="${dep}">${dep} <span class="chip-count">${countForDept(dep)}</span></button>`).join('')}
+      <button class="dept-chip ${officerDeptFilter==='ssg'?'active':''}" data-officer-dept="ssg">SSG <span class="chip-count">${countForDept('ssg')}</span></button>
     </div>
     ${sectionsForOfficerDept.length>0 ? `
     <div class="section-tab-row">
       <button class="section-tab ${officerSectionFilter==='all'?'active':''}" data-officer-section="all">All sections</button>
       ${sectionsForOfficerDept.map(sec=>`<button class="section-tab ${normSection(officerSectionFilter)===normSection(sec)?'active':''}" data-officer-section="${sec}">${sec}</button>`).join('')}
     </div>` : ''}
-    ` : ''}
     <div class="field student-search-field">
       <label>Search</label>
       <input autocomplete="off" id="officer-search" value="${state.officerSearchQuery||''}" placeholder="Name or username">
     </div>
   </div>
-  <div class="section-title">${typeFilter==='all' ? 'All officers' : (officerDeptFilter==='all' ? scopeLabel(typeFilter) : (officerSectionFilter==='all' ? officerDeptFilter : `${officerDeptFilter} — ${officerSectionFilter}`))} <span class="pill gold">${filtered.length}</span></div>
+  <div class="section-title">${officerDeptFilter==='all' ? 'All officers' : officerDeptFilter==='ssg' ? 'SSG' : (officerSectionFilter==='all' ? officerDeptFilter : `${officerDeptFilter} — ${officerSectionFilter}`)} <span class="pill gold">${filtered.length}</span></div>
   <div class="card" style="padding:0;">
     <table id="officer-table">
       <tr><th>Name</th><th>Username</th><th>Type</th><th>Department</th><th>Section</th><th></th></tr>
@@ -2084,22 +2076,14 @@ function attachAdminHandlers(){
       copyOfficerResetBtn.textContent = 'Copy failed — select manually';
     }
   };
-  document.querySelectorAll('.officer-type-filter-btn').forEach(el=>{
+  document.querySelectorAll('[data-officer-dept]').forEach(el=>{
     el.onclick = ()=>{
-      state.officerTypeFilter = el.dataset.type;
-      state.officerDeptFilter = 'all';
+      state.officerDeptFilter = el.dataset.officerDept;
       state.officerSectionFilter = 'all';
       state.officerPage = 1;
       render();
     };
   });
-  const officerDeptFilterEl = document.getElementById('officer-dept-filter');
-  if(officerDeptFilterEl) officerDeptFilterEl.onchange = ()=>{
-    state.officerDeptFilter = officerDeptFilterEl.value;
-    state.officerSectionFilter = 'all';
-    state.officerPage = 1;
-    render();
-  };
   document.querySelectorAll('[data-officer-section]').forEach(el=>{
     el.onclick = ()=>{
       state.officerSectionFilter = el.dataset.officerSection;
@@ -2201,7 +2185,7 @@ function attachAdminHandlers(){
     state.studentPage = 1;
     reRenderPreservingFocus();
   };
-  document.querySelectorAll('.dept-chip:not(.officer-type-filter-btn)').forEach(el=>{
+  document.querySelectorAll('.dept-chip:not([data-officer-dept])').forEach(el=>{
     el.onclick = ()=>{
       state.studentDeptFilter = el.dataset.dept;
       state.studentSectionFilter = 'all';
