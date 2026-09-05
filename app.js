@@ -825,11 +825,16 @@ function renderOfficer(){
   const u = state.currentUser;
   const myEvents = DB.events.filter(e=>{
     if(!e.departments.includes(u.department)) return false;
-    // section officers only see events open to every section, or ones that specifically include their own
-    if(u.section && e.sections && e.sections.length>0){
-      return e.sections.some(s=>normSection(s)===normSection(u.section));
+    if(u.section){
+      // section officers only see events open to every section, or ones that specifically include their own
+      if(e.sections && e.sections.length>0){
+        return e.sections.some(s=>normSection(s)===normSection(u.section));
+      }
+      return true;
     }
-    return true;
+    // department officers only see events open to the whole department — a section-only event
+    // has no meaningful way to be represented on a department-wide QR desk or attendee list
+    return !(e.sections && e.sections.length>0);
   });
   if(state.officerSubRoute==='generate') return renderOfficerGenerate(myEvents);
   if(state.officerSubRoute==='attendees') return renderOfficerAttendees(myEvents);
@@ -932,7 +937,9 @@ async function removeAttendanceRecord(recordId){
 
 /* ---------------- SSG (all-department attendance) ---------------- */
 function renderSsg(){
-  const allEvents = DB.events;
+  // events restricted to specific sections have no meaningful way to be represented on an
+  // SSG desk that covers the whole school, so they're excluded here too
+  const allEvents = DB.events.filter(e=>!(e.sections && e.sections.length>0));
   if(state.ssgSubRoute==='generate') return renderSsgGenerate(allEvents);
   if(state.ssgSubRoute==='attendees') return renderSsgAttendees(allEvents);
   if(state.ssgSubRoute==='sheet') return renderSsgOfficerSheet();
