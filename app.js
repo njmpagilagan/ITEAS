@@ -277,6 +277,7 @@ let state = {
   officerSectionFilter:'all',
   officerModalOpen:false,
   officerPage:1,
+  departmentsPage:1,
   officerSearchQuery:'',
   recordsShown:false,
   showAttendanceStudentId:null,
@@ -333,7 +334,7 @@ function autoFitMainContent(){
   const available = main.clientHeight;
   const natural = main.scrollHeight;
   if(available>0 && natural > available){
-    const pct = Math.max(75, Math.floor((available / natural) * 100));
+    const pct = Math.max(60, Math.floor((available / natural) * 100));
     main.style.zoom = pct + '%';
   }
 }
@@ -1578,6 +1579,7 @@ function renderAdminDepartments(){
   const deptInUse = new Set();
   DB.events.forEach(e=>e.departments.forEach(dp=>deptInUse.add(dp)));
   const sectionInUse = new Set(Object.values(DB.users).filter(u=>u.role==='student' || u.role==='officer').map(u=>normSection(u.section)));
+  const { items: pageDeps, totalPages, page } = paginate(deps, state.departmentsPage, 3);
   return `
   <div class="page-head"><h1>Departments</h1><p>Manage departments and the sections within each one — everything students and officers pick from.</p></div>
   <div class="card" style="max-width:440px; margin-bottom:16px;">
@@ -1586,7 +1588,7 @@ function renderAdminDepartments(){
     <button class="btn-primary" style="width:100%;" id="add-dept-btn">Add department</button>
   </div>
   <div class="section-title">All departments</div>
-  ${deps.length===0 ? `<div class="empty">No departments yet.</div>` : deps.map(dept=>{
+  ${deps.length===0 ? `<div class="empty">No departments yet.</div>` : pageDeps.map(dept=>{
     const sections = sectionsFor(dept);
     return `
     <div class="card" style="max-width:560px; margin-bottom:10px;">
@@ -1605,7 +1607,8 @@ function renderAdminDepartments(){
         <button class="btn-ghost add-section-btn" data-dept="${dept}" style="flex-shrink:0;">Add section</button>
       </div>
     </div>`;
-  }).join('')}`;
+  }).join('')}
+  ${paginationControls(page, totalPages, 'departments')}`;
 }
 function renderAdminStudents(){
   const allStudents = Object.values(DB.users).filter(u=>u.role==='student').sort((a,b)=>a.name.localeCompare(b.name));
@@ -2181,6 +2184,10 @@ function attachAdminHandlers(){
   if(officerPrevBtn) officerPrevBtn.onclick = ()=>{ state.officerPage = Math.max(1, (state.officerPage||1)-1); render(); };
   const officerNextBtn = document.getElementById('officer-next-btn');
   if(officerNextBtn) officerNextBtn.onclick = ()=>{ state.officerPage = (state.officerPage||1)+1; render(); };
+  const departmentsPrevBtn = document.getElementById('departments-prev-btn');
+  if(departmentsPrevBtn) departmentsPrevBtn.onclick = ()=>{ state.departmentsPage = Math.max(1, (state.departmentsPage||1)-1); render(); };
+  const departmentsNextBtn = document.getElementById('departments-next-btn');
+  if(departmentsNextBtn) departmentsNextBtn.onclick = ()=>{ state.departmentsPage = (state.departmentsPage||1)+1; render(); };
   const fe = document.getElementById('filter-event');
   if(fe) fe.onchange = async ()=>{ state.adminFilterEvent = fe.value; state.recordsPage = 1; DB.attendance = await fetchKey('attendance', DB.attendance); render(); };
   const fd = document.getElementById('filter-dept');
