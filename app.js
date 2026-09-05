@@ -280,7 +280,7 @@ function render(){
 function pwField(id, label, placeholder){
   return `<div class="field"><label>${label}</label>
     <div class="pw-wrap">
-      <input id="${id}" type="password" placeholder="${placeholder||''}">
+      <input autocomplete="off" id="${id}" type="password" placeholder="${placeholder||''}">
       <button type="button" class="pw-toggle" data-target="${id}" aria-label="Show password">Show</button>
     </div>
   </div>`;
@@ -333,12 +333,12 @@ function renderStudentAuth(){
       <a data-mode="register" class="${mode==='register'?'active':''}">Create account</a>
     </div>
     ${mode==='login' ? `
-      <div class="field"><label>Student ID</label><input id="s-id" placeholder="e.g. 2023-00451"></div>
+      <div class="field"><label>Student ID</label><input autocomplete="off" id="s-id" placeholder="e.g. 2023-00451"></div>
       ${pwField('s-pw', 'Password', '••••••••')}
       <button class="btn-primary" style="width:100%" id="student-login-btn">Log in</button>
     ` : `
-      <div class="field"><label>Full name</label><input id="r-name" placeholder="Juan Dela Cruz"></div>
-      <div class="field"><label>Student ID</label><input id="r-id" placeholder="e.g. 2023-00451"></div>
+      <div class="field"><label>Full name</label><input autocomplete="off" id="r-name" placeholder="Juan Dela Cruz"></div>
+      <div class="field"><label>Student ID</label><input autocomplete="off" id="r-id" placeholder="e.g. 2023-00451"></div>
       <div class="field"><label>Sex</label><select id="r-sex"><option value="">Select</option><option value="M">Male</option><option value="F">Female</option></select></div>
       <div class="field"><label>Department</label><select id="r-dept">${DB.departments.map(dep=>`<option>${dep}</option>`).join('')}</select></div>
       <div class="field"><label>Section</label><select id="r-section">${sectionOptions(DB.departments[0], null)}</select></div>
@@ -350,7 +350,7 @@ function renderStudentAuth(){
 }
 function renderOfficerAuth(){
   return `
-    <div class="field"><label>Officer username</label><input id="o-user" placeholder="set by the system admin"></div>
+    <div class="field"><label>Officer username</label><input autocomplete="off" id="o-user" placeholder="set by the system admin"></div>
     ${pwField('o-pw', 'Password', '••••••••')}
     <button class="btn-primary" style="width:100%" id="officer-login-btn">Log in</button>
     <p style="text-align:center; margin:10px 0 0 0;"><a id="officer-forgot-pw-link" style="font-size:12.5px; color:var(--ink-soft); font-weight:600; cursor:pointer;">Forgot password?</a></p>
@@ -376,7 +376,7 @@ function renderOfficerForgotModal(){
 }
 function renderAdminAuth(){
   return `
-    <div class="field"><label>Admin username</label><input id="a-user" placeholder="Enter your admin username"></div>
+    <div class="field"><label>Admin username</label><input autocomplete="off" id="a-user" placeholder="Enter your admin username"></div>
     ${pwField('a-pw', 'Password', '••••••••')}
     <button class="btn-primary" style="width:100%" id="admin-login-btn">Log in</button>
     <div class="hint">Default seed account: <span class="mono">sas-admin</span> / <span class="mono">ChangeMe123</span> — change this immediately after first login.</div>
@@ -553,7 +553,7 @@ function renderCheckin(){
     <div class="card" style="max-width:460px;">
       <button class="btn-gold" style="width:100%; padding:14px;" id="open-camera-btn">Scan QR code</button>
       <div style="text-align:center; margin:14px 0; color:var(--ink-soft); font-size:12px;">— or —</div>
-      <div class="field"><label>Enter code manually</label><input id="manual-code" placeholder="paste or type the code shown by the officer" class="mono"></div>
+      <div class="field"><label>Enter code manually</label><input autocomplete="off" id="manual-code" placeholder="paste or type the code shown by the officer" class="mono"></div>
       <button class="btn-primary" style="width:100%" id="submit-code-btn">Continue</button>
       ${state.err ? `<div class="err" style="margin-top:12px;">${state.err}</div>` : ''}
     </div>
@@ -1221,26 +1221,26 @@ function renderProfile(){
   return `
   <div class="page-head"><h1>My Profile</h1><p>${roleLabel} account details.</p></div>
   <div class="card" style="max-width:440px; margin-bottom:16px;">
-    <div class="field"><label>Full name</label><input id="prof-name" value="${u.name}"></div>
+    <div class="field"><label>Full name</label><input autocomplete="off" id="prof-name" value="${u.name}"></div>
     ${u.role==='student' ? `
-      <div class="field"><label>Student ID</label><input value="${u.id}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
+      <div class="field"><label>Student ID</label><input autocomplete="off" value="${u.id}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
       <div class="field"><label>Sex</label><select id="prof-sex"><option value="">Select</option><option value="M" ${u.sex==='M'?'selected':''}>Male</option><option value="F" ${u.sex==='F'?'selected':''}>Female</option></select></div>
       <div class="field"><label>Department</label><select id="prof-dept">${DB.departments.map(dep=>`<option ${u.department===dep?'selected':''}>${dep}</option>`).join('')}</select></div>
       <div class="field"><label>Section</label><select id="prof-section">${sectionOptions(u.department, u.section)}</select></div>
       <div class="hint" style="margin-top:-8px; margin-bottom:10px;">Only your own department and section's QR code will check you in.</div>
     ` : ''}
     ${u.role==='officer' ? `
-      <div class="field"><label>Username</label><input value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
-      <div class="field"><label>Department</label><input value="${u.department}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
-      <div class="field"><label>Section</label><input value="${u.section || 'All sections (department officer)'}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
+      <div class="field"><label>Username</label><input autocomplete="off" value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
+      <div class="field"><label>Department</label><input autocomplete="off" value="${u.department}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
+      <div class="field"><label>Section</label><input autocomplete="off" value="${u.section || 'All sections (department officer)'}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
       <div class="hint" style="margin-top:-8px; margin-bottom:10px;">Department/section reassignment is handled by the system admin, under Manage Officers.</div>
     ` : ''}
     ${u.role==='ssg' ? `
-      <div class="field"><label>Username</label><input value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
+      <div class="field"><label>Username</label><input autocomplete="off" value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
       <div class="hint" style="margin-top:-8px; margin-bottom:10px;">SSG accounts can take attendance across every department and section — no department/section assignment applies.</div>
     ` : ''}
     ${u.role==='admin' ? `
-      <div class="field"><label>Username</label><input value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
+      <div class="field"><label>Username</label><input autocomplete="off" value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
     ` : ''}
     ${state.profileMsg==='saved' ? `<div class="pill green" style="margin-bottom:10px;">Details saved</div>` : ''}
     <button class="btn-primary" style="width:100%;" id="save-profile-btn">Save details</button>
@@ -1435,10 +1435,10 @@ function renderEventModal(){
     <div class="modal-card">
       <button class="close-x" id="close-event-modal-btn">&times;</button>
       ${editing ? `<div class="pill gold" style="margin-bottom:10px;">Editing event</div>` : `<h3 style="margin-top:0;">Add event</h3>`}
-      <div class="field"><label>Event name</label><input id="ev-name" value="${d.name}" placeholder="Foundation Week 2026"></div>
+      <div class="field"><label>Event name</label><input autocomplete="off" id="ev-name" value="${d.name}" placeholder="Foundation Week 2026"></div>
       <div class="row">
-        <div class="field" style="flex:1;"><label>Date</label><input id="ev-date" type="date" value="${d.date}"></div>
-        <div class="field" style="flex:1;"><label>Venue</label><input id="ev-venue" value="${d.venue||''}" placeholder="Gymnasium"></div>
+        <div class="field" style="flex:1;"><label>Date</label><input autocomplete="off" id="ev-date" type="date" value="${d.date}"></div>
+        <div class="field" style="flex:1;"><label>Venue</label><input autocomplete="off" id="ev-venue" value="${d.venue||''}" placeholder="Gymnasium"></div>
       </div>
       <div class="field">
         <label>Duration</label>
@@ -1451,19 +1451,19 @@ function renderEventModal(){
       </div>
       ${sessionType==='full' ? `
       <div class="row">
-        <div class="field" style="flex:1;"><label>Morning time</label><input id="ev-am-time" value="${d.amTime||''}" placeholder="8:00 AM - 12:00 PM"></div>
-        <div class="field" style="flex:1;"><label>Afternoon time</label><input id="ev-pm-time" value="${d.pmTime||''}" placeholder="1:00 PM - 5:00 PM"></div>
+        <div class="field" style="flex:1;"><label>Morning time</label><input autocomplete="off" id="ev-am-time" value="${d.amTime||''}" placeholder="8:00 AM - 12:00 PM"></div>
+        <div class="field" style="flex:1;"><label>Afternoon time</label><input autocomplete="off" id="ev-pm-time" value="${d.pmTime||''}" placeholder="1:00 PM - 5:00 PM"></div>
       </div>
       ` : sessionType==='am' ? `
-      <div class="field"><label>Time</label><input id="ev-am-time" value="${d.amTime||''}" placeholder="8:00 AM - 12:00 PM"></div>
+      <div class="field"><label>Time</label><input autocomplete="off" id="ev-am-time" value="${d.amTime||''}" placeholder="8:00 AM - 12:00 PM"></div>
       ` : `
-      <div class="field"><label>Time</label><input id="ev-pm-time" value="${d.pmTime||''}" placeholder="1:00 PM - 5:00 PM"></div>
+      <div class="field"><label>Time</label><input autocomplete="off" id="ev-pm-time" value="${d.pmTime||''}" placeholder="1:00 PM - 5:00 PM"></div>
       `}
       <div class="field">
         <label>Participating departments</label>
         ${DB.departments.map(dep=>`
           <label style="text-transform:none; font-weight:400; display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-            <input type="checkbox" style="width:auto;" class="dept-check" value="${dep}" ${d.departments.includes(dep)?'checked':''}> ${dep}
+            <input autocomplete="off" type="checkbox" style="width:auto;" class="dept-check" value="${dep}" ${d.departments.includes(dep)?'checked':''}> ${dep}
           </label>`).join('')}
       </div>
       <div class="field">
@@ -1476,7 +1476,7 @@ function renderEventModal(){
             <div style="font-size:11.5px; font-weight:700; color:var(--ink-soft); margin-bottom:4px;">${dep}</div>
             ${secs.map(sec=>`
               <label style="text-transform:none; font-weight:400; display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-                <input type="checkbox" style="width:auto;" class="ev-section-check" value="${sec}" ${d.sections.includes(sec)?'checked':''}> ${sec}
+                <input autocomplete="off" type="checkbox" style="width:auto;" class="ev-section-check" value="${sec}" ${d.sections.includes(sec)?'checked':''}> ${sec}
               </label>`).join('')}
           </div>`;
         }).join('')}
@@ -1512,7 +1512,7 @@ function renderAdminDepartments(){
   return `
   <div class="page-head"><h1>Departments</h1><p>Manage departments and the sections within each one — everything students and officers pick from.</p></div>
   <div class="card" style="max-width:440px; margin-bottom:16px;">
-    <div class="field"><label>Add a department</label><input id="new-dept-name" placeholder="e.g. Maritime Department"></div>
+    <div class="field"><label>Add a department</label><input autocomplete="off" id="new-dept-name" placeholder="e.g. Maritime Department"></div>
     ${state.err ? `<div class="err">${state.err}</div>` : ''}
     <button class="btn-primary" style="width:100%;" id="add-dept-btn">Add department</button>
   </div>
@@ -1532,7 +1532,7 @@ function renderAdminDepartments(){
           </span>`).join('') : `<span class="hint" style="margin:0;">No sections yet for this department.</span>`}
       </div>
       <div class="row" style="gap:8px; margin-bottom:0;">
-        <input class="add-section-input" data-dept="${dept}" placeholder="Add a section, e.g. BSCS 3-A" style="flex:1;">
+        <input autocomplete="off" class="add-section-input" data-dept="${dept}" placeholder="Add a section, e.g. BSCS 3-A" style="flex:1;">
         <button class="btn-ghost add-section-btn" data-dept="${dept}" style="flex-shrink:0;">Add section</button>
       </div>
     </div>`;
@@ -1568,7 +1568,7 @@ function renderAdminStudents(){
   ${editingUser ? `
   <div class="card" style="max-width:480px; margin-bottom:16px;">
     <div class="pill gold" style="margin-bottom:10px;">Editing ${editingUser.id}</div>
-    <div class="field"><label>Full name</label><input id="stu-edit-name" value="${editingUser.name}"></div>
+    <div class="field"><label>Full name</label><input autocomplete="off" id="stu-edit-name" value="${editingUser.name}"></div>
     <div class="field"><label>Sex</label><select id="stu-edit-sex"><option value="">Select</option><option value="M" ${editingUser.sex==='M'?'selected':''}>Male</option><option value="F" ${editingUser.sex==='F'?'selected':''}>Female</option></select></div>
     <div class="field"><label>Department</label><select id="stu-edit-dept">${DB.departments.map(dep=>`<option ${editingUser.department===dep?'selected':''}>${dep}</option>`).join('')}</select></div>
     <div class="field"><label>Section</label><select id="stu-edit-section">${sectionOptions(editingUser.department, editingUser.section)}</select></div>
@@ -1592,7 +1592,7 @@ function renderAdminStudents(){
     </div>` : ''}
     <div class="field student-search-field">
       <label>Search ${deptFilter==='all'?'all departments':'in ' + deptFilter}</label>
-      <input id="student-search" value="${state.studentSearchQuery||''}" placeholder="Name or student ID">
+      <input autocomplete="off" id="student-search" value="${state.studentSearchQuery||''}" placeholder="Name or student ID">
     </div>
   </div>
   <div class="section-title">${deptFilter==='all' ? 'All students' : (sectionFilter==='all' ? deptFilter : `${deptFilter} — ${sectionFilter}`)} <span class="pill gold">${students.length}</span></div>
@@ -1622,8 +1622,8 @@ function renderOfficerModal(){
           <div class="auth-tab officer-type-tab ${type==='ssg'?'active':''}" data-type="ssg" style="${editing?'pointer-events:none; opacity:0.6;':''}">SSG</div>
         </div>
       </div>
-      <div class="field" style="margin-top:16px;"><label>Officer name</label><input id="of-name" value="${d.name}" placeholder="Maria Santos"></div>
-      <div class="field"><label>Username</label><input id="of-user" value="${d.username}" placeholder="${type==='ssg'?'ssg-officer1':type==='department'?'cs-dept-officer':'cs-officer'}" ${editing?'disabled style="background:var(--bg); color:var(--ink-soft);"':''}></div>
+      <div class="field" style="margin-top:16px;"><label>Officer name</label><input autocomplete="off" id="of-name" value="${d.name}" placeholder="Maria Santos"></div>
+      <div class="field"><label>Username</label><input autocomplete="off" id="of-user" value="${d.username}" placeholder="${type==='ssg'?'ssg-officer1':type==='department'?'cs-dept-officer':'cs-officer'}" ${editing?'disabled style="background:var(--bg); color:var(--ink-soft);"':''}></div>
       ${pwField('of-pw', 'Password', editing ? 'Leave blank to keep current password' : 'Set a password')}
       ${type==='section' ? `
       <div class="field">
@@ -1706,7 +1706,7 @@ function renderAdminOfficers(){
     ` : ''}
     <div class="field student-search-field">
       <label>Search</label>
-      <input id="officer-search" value="${state.officerSearchQuery||''}" placeholder="Name or username">
+      <input autocomplete="off" id="officer-search" value="${state.officerSearchQuery||''}" placeholder="Name or username">
     </div>
   </div>
   <div class="section-title">${typeFilter==='all' ? 'All officers' : (officerDeptFilter==='all' ? scopeLabel(typeFilter) : (officerSectionFilter==='all' ? officerDeptFilter : `${officerDeptFilter} — ${officerSectionFilter}`))} <span class="pill gold">${filtered.length}</span></div>

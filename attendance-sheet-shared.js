@@ -140,11 +140,11 @@ function renderSheetSettingsModal(){
         <div class="field" style="flex:1;">
           <label>Left logo</label>
           ${s.leftLogo ? `<img src="${s.leftLogo}" style="height:44px; display:block; margin-bottom:6px;">` : ''}
-          <input type="file" id="left-logo-input" accept="image/*">
+          <input autocomplete="off" type="file" id="left-logo-input" accept="image/*">
           ${s.leftLogo ? `
           <div style="margin-top:8px;">
             <label style="margin-bottom:2px;">Size (${s.leftLogoSize}px)</label>
-            <input type="range" id="left-logo-size" min="30" max="500" value="${s.leftLogoSize}" style="width:100%;">
+            <input autocomplete="off" type="range" id="left-logo-size" min="30" max="500" value="${s.leftLogoSize}" style="width:100%;">
           </div>
           <button class="btn-ghost" id="remove-left-logo-btn" style="margin-top:6px;">Remove</button>
           <button class="btn-ghost" id="reset-left-logo-pos-btn" style="margin-top:6px;">Reset position</button>
@@ -153,11 +153,11 @@ function renderSheetSettingsModal(){
         <div class="field" style="flex:1;">
           <label>Right logo</label>
           ${s.rightLogo ? `<img src="${s.rightLogo}" style="height:44px; display:block; margin-bottom:6px;">` : ''}
-          <input type="file" id="right-logo-input" accept="image/*">
+          <input autocomplete="off" type="file" id="right-logo-input" accept="image/*">
           ${s.rightLogo ? `
           <div style="margin-top:8px;">
             <label style="margin-bottom:2px;">Size (${s.rightLogoSize}px)</label>
-            <input type="range" id="right-logo-size" min="30" max="500" value="${s.rightLogoSize}" style="width:100%;">
+            <input autocomplete="off" type="range" id="right-logo-size" min="30" max="500" value="${s.rightLogoSize}" style="width:100%;">
           </div>
           <button class="btn-ghost" id="remove-right-logo-btn" style="margin-top:6px;">Remove</button>
           <button class="btn-ghost" id="reset-right-logo-pos-btn" style="margin-top:6px;">Reset position</button>
@@ -165,35 +165,35 @@ function renderSheetSettingsModal(){
         </div>
       </div>
       <div class="row">
-        <div class="field" style="flex:1;"><label>University / institution name</label><input id="sh-university" value="${s.university}"></div>
+        <div class="field" style="flex:1;"><label>University / institution name</label><input autocomplete="off" id="sh-university" value="${s.university}"></div>
       </div>
-      <div class="field"><label>Address</label><input id="sh-address" value="${s.address}"></div>
+      <div class="field"><label>Address</label><input autocomplete="off" id="sh-address" value="${s.address}"></div>
       <div class="row">
-        <div class="field" style="flex:1;"><label>Website</label><input id="sh-website" value="${s.website}"></div>
-        <div class="field" style="flex:1;"><label>Email</label><input id="sh-email" value="${s.email}"></div>
-        <div class="field" style="flex:1;"><label>Tel/Fax</label><input id="sh-telfax" value="${s.telfax}"></div>
+        <div class="field" style="flex:1;"><label>Website</label><input autocomplete="off" id="sh-website" value="${s.website}"></div>
+        <div class="field" style="flex:1;"><label>Email</label><input autocomplete="off" id="sh-email" value="${s.email}"></div>
+        <div class="field" style="flex:1;"><label>Tel/Fax</label><input autocomplete="off" id="sh-telfax" value="${s.telfax}"></div>
       </div>
-      <div class="field"><label>College / unit name</label><input id="sh-collegeunit" value="${s.collegeUnit}" placeholder="( Name of College/Unit )"></div>
+      <div class="field"><label>College / unit name</label><input autocomplete="off" id="sh-collegeunit" value="${s.collegeUnit}" placeholder="( Name of College/Unit )"></div>
       <div class="row">
-        <div class="field" style="flex:1;"><label>Reference No.</label><input id="sh-refno" value="${s.refNo}"></div>
-        <div class="field" style="flex:1;"><label>Effectivity date</label><input id="sh-effdate" value="${s.effectivityDate}" placeholder="e.g. June 29, 2026"></div>
-        <div class="field" style="flex:1;"><label>Revision No.</label><input id="sh-revno" value="${s.revisionNo}"></div>
+        <div class="field" style="flex:1;"><label>Reference No.</label><input autocomplete="off" id="sh-refno" value="${s.refNo}"></div>
+        <div class="field" style="flex:1;"><label>Effectivity date</label><input autocomplete="off" id="sh-effdate" value="${s.effectivityDate}" placeholder="e.g. June 29, 2026"></div>
+        <div class="field" style="flex:1;"><label>Revision No.</label><input autocomplete="off" id="sh-revno" value="${s.revisionNo}"></div>
       </div>
       <div class="section-title">Footer</div>
       <div class="field">
         <label>Footer logo</label>
         <p class="hint" style="margin-top:-4px;">A separate logo from the header — e.g. an ISO certification mark or similar badge. Real-world reference size: 1.98cm tall × 4.98cm wide (a wide badge shape, not square).</p>
         ${s.footerLogo ? `<img src="${s.footerLogo}" style="height:50px; display:block; margin-bottom:6px;">` : ''}
-        <input type="file" id="footer-logo-input" accept="image/*">
+        <input autocomplete="off" type="file" id="footer-logo-input" accept="image/*">
         ${s.footerLogo ? `
         <div class="row" style="margin-top:8px; max-width:400px;">
           <div class="field" style="flex:1; margin-bottom:0;">
             <label style="margin-bottom:2px;">Width (${s.footerLogoWidth}px)</label>
-            <input type="range" id="footer-logo-width" min="40" max="320" value="${s.footerLogoWidth}" style="width:100%;">
+            <input autocomplete="off" type="range" id="footer-logo-width" min="40" max="320" value="${s.footerLogoWidth}" style="width:100%;">
           </div>
           <div class="field" style="flex:1; margin-bottom:0;">
             <label style="margin-bottom:2px;">Height (${s.footerLogoHeight}px)</label>
-            <input type="range" id="footer-logo-height" min="20" max="160" value="${s.footerLogoHeight}" style="width:100%;">
+            <input autocomplete="off" type="range" id="footer-logo-height" min="20" max="160" value="${s.footerLogoHeight}" style="width:100%;">
           </div>
         </div>
         <button class="btn-ghost" id="remove-footer-logo-btn" style="margin-top:6px;">Remove</button>
@@ -201,8 +201,8 @@ function renderSheetSettingsModal(){
         ` : ''}
       </div>
       <div class="row">
-        <div class="field" style="flex:1;"><label>Footer label</label><input id="sh-footerlabel" value="${s.footerLabel}"></div>
-        <div class="field" style="flex:1;"><label>Signature line label</label><input id="sh-siglabel" value="${s.signatureLabel}"></div>
+        <div class="field" style="flex:1;"><label>Footer label</label><input autocomplete="off" id="sh-footerlabel" value="${s.footerLabel}"></div>
+        <div class="field" style="flex:1;"><label>Signature line label</label><input autocomplete="off" id="sh-siglabel" value="${s.signatureLabel}"></div>
       </div>
       ${state.err ? `<div class="err">${state.err}</div>` : ''}
       <button class="btn-primary" style="width:100%;" id="save-sheet-settings-btn">Save header &amp; footer</button>

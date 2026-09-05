@@ -44,11 +44,11 @@ function renderSsgOfficerSheet(){
     </div>` : ''}
     ${isWholeDay ? `<p class="hint">This is a whole-day event, so morning and afternoon get their own separate attendance sheets — switch the Session above to print the other one.</p>` : ''}
     ${attendees ? `<p class="hint">${attendees.length} student${attendees.length===1?'':'s'} checked in${isWholeDay ? ` for the ${session==='am'?'morning':'afternoon'} session` : ''} — split across <strong>${chunks.length}</strong> sheet${chunks.length===1?'':'s'} (30 per page, same header/footer repeated on each).</p>` : ''}
-    <div class="field"><label>Nature/Title of Meeting/Activity/Seminar</label><input id="sh-title" value="${d.title}"></div>
-    ${!attendees ? `<div class="field"><label>Rows</label><input id="sh-rows" type="number" min="1" max="60" value="${Math.max(1, Math.min(60, parseInt(d.rows,10) || 30))}"></div>` : ''}
-    <div class="field"><label>Date</label><input id="sh-date" value="${d.date}"></div>
-    <div class="field"><label>Time</label><input id="sh-time" value="${d.time}"></div>
-    <div class="field"><label>Venue</label><input id="sh-venue" value="${d.venue}"></div>
+    <div class="field"><label>Nature/Title of Meeting/Activity/Seminar</label><input autocomplete="off" id="sh-title" value="${d.title}"></div>
+    ${!attendees ? `<div class="field"><label>Rows</label><input autocomplete="off" id="sh-rows" type="number" min="1" max="60" value="${Math.max(1, Math.min(60, parseInt(d.rows,10) || 30))}"></div>` : ''}
+    <div class="field"><label>Date</label><input autocomplete="off" id="sh-date" value="${d.date}"></div>
+    <div class="field"><label>Time</label><input autocomplete="off" id="sh-time" value="${d.time}"></div>
+    <div class="field"><label>Venue</label><input autocomplete="off" id="sh-venue" value="${d.venue}"></div>
     <button class="btn-ghost" style="width:100%; margin-bottom:8px;" id="open-sheet-preview-btn">Preview</button>
     <button class="btn-gold" style="width:100%;" id="print-sheet-btn">Print / Save as PDF</button>
     <p class="hint">Opens your browser's print dialog — choose "Save as PDF" there if you want a digital copy instead of printing. Each sheet prints on its own page.</p>
