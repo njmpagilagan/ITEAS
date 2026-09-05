@@ -156,6 +156,13 @@ function computeFitZoom(){
   let zoom = Math.floor((availableWidth / naturalWidthPx) * 100);
   return Math.max(30, Math.min(150, zoom));
 }
+function applySheetZoom(pct){
+  state.sheetZoom = pct;
+  const container = document.getElementById('print-sheet');
+  if(container) container.style.zoom = pct + '%';
+  const label = document.getElementById('sheet-zoom-label');
+  if(label) label.textContent = pct + '%';
+}
 function paginate(list, page, pageSize){
   const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
   const clampedPage = Math.min(Math.max(1, page || 1), totalPages);
@@ -681,7 +688,10 @@ let sheetResizeDebounce = null;
 window.addEventListener('resize', ()=>{
   if(!(state.route==='admin' && state.adminSubRoute==='sheet' && state.sheetZoomAuto && state.sheetPreviewModalOpen)) return;
   clearTimeout(sheetResizeDebounce);
-  sheetResizeDebounce = setTimeout(render, 150);
+  sheetResizeDebounce = setTimeout(()=>{
+    const fitZoom = computeFitZoom();
+    if(fitZoom) applySheetZoom(fitZoom);
+  }, 150);
 });
 function attachStudentHandlers(){
   const openCam = document.getElementById('open-camera-btn');
@@ -1982,11 +1992,11 @@ function renderOneSheet(s, d, attendeesChunk, pageIndex, isActive){
       <div class="ps-divider"><div class="ps-divider-thick"></div><div class="ps-divider-thin"></div></div>
       <div class="ps-title">COLLEGE/OFFICE ACTIVITY/SEMINAR ATTENDANCE SHEET</div>
       <div class="ps-fields">
-        <div>Nature/Title of Meeting/Activity/Seminar: <span class="ps-fill wide">${d.title}</span></div>
+        <div>Nature/Title of Meeting/Activity/Seminar: <span class="ps-fill wide ps-fill-title">${d.title}</span></div>
         <div class="ps-fields-row">
-          <span>Date: <span class="ps-fill short">${d.date}</span></span>
-          <span>Time: <span class="ps-fill short">${d.time}</span></span>
-          <span>Venue: <span class="ps-fill">${d.venue}</span></span>
+          <span>Date: <span class="ps-fill short ps-fill-date">${d.date}</span></span>
+          <span>Time: <span class="ps-fill short ps-fill-time">${d.time}</span></span>
+          <span>Venue: <span class="ps-fill ps-fill-venue">${d.venue}</span></span>
         </div>
       </div>
       <table class="ps-table">
@@ -2020,7 +2030,7 @@ function renderSheetPreviewModal(s, d, chunks, activePage){
         ${chunks.length>1 ? `
         <span style="display:flex; align-items:center; gap:10px; text-transform:none; letter-spacing:0; font-weight:400;">
           <button class="btn-ghost" id="sheet-preview-prev-btn" ${activePage<=0?'disabled':''}>&larr; Prev</button>
-          <span class="hint" style="margin:0;">Page ${activePage+1} of ${chunks.length}</span>
+          <span class="hint" id="sheet-page-label" style="margin:0;">Page ${activePage+1} of ${chunks.length}</span>
           <button class="btn-ghost" id="sheet-preview-next-btn" ${activePage>=chunks.length-1?'disabled':''}>Next &rarr;</button>
         </span>` : ''}
       </div>
@@ -2649,12 +2659,21 @@ function attachAdminHandlers(){
     const el = document.getElementById(id);
     if(el) el.oninput = ()=>{ state.sheetSettingsDraft[field] = el.value; reRenderPreservingFocus(); };
   });
+  // title/date/time/venue only affect small text spans repeated across every printed page —
+  // patch them directly instead of a full re-render, which is what caused the flicker on every keystroke
   [
-    ['sh-title','title'], ['sh-date','date'], ['sh-time','time'], ['sh-venue','venue'], ['sh-rows','rows']
-  ].forEach(([id,field])=>{
+    ['sh-title','title','ps-fill-title'], ['sh-date','date','ps-fill-date'],
+    ['sh-time','time','ps-fill-time'], ['sh-venue','venue','ps-fill-venue']
+  ].forEach(([id,field,cls])=>{
     const el = document.getElementById(id);
-    if(el) el.oninput = ()=>{ state.sheetDraft[field] = el.value; reRenderPreservingFocus(); };
+    if(el) el.oninput = ()=>{
+      state.sheetDraft[field] = el.value;
+      document.querySelectorAll('.'+cls).forEach(span=>{ span.textContent = el.value; });
+    };
   });
+  // row count changes the table structure itself, which genuinely needs a re-render
+  const sheetRowsEl = document.getElementById('sh-rows');
+  if(sheetRowsEl) sheetRowsEl.oninput = ()=>{ state.sheetDraft.rows = sheetRowsEl.value; reRenderPreservingFocus(); };
   const sheetEventSelect = document.getElementById('sh-event');
   if(sheetEventSelect) sheetEventSelect.onchange = async ()=>{
     const eventId = sheetEventSelect.value;
@@ -2695,30 +2714,36 @@ function attachAdminHandlers(){
     }
     render();
   };
+  const goToSheetPage = (newPage)=>{
+    const sheets = document.querySelectorAll('#print-sheet .print-sheet');
+    const totalPages = sheets.length;
+    const clamped = Math.max(0, Math.min(totalPages-1, newPage));
+    state.sheetPreviewPage = clamped;
+    sheets.forEach((sheet, idx)=>{ sheet.classList.toggle('ps-preview-hidden', idx !== clamped); });
+    const pageLabel = document.getElementById('sheet-page-label');
+    if(pageLabel) pageLabel.textContent = `Page ${clamped+1} of ${totalPages}`;
+    if(sheetPrevPageBtn) sheetPrevPageBtn.disabled = clamped<=0;
+    if(sheetNextPageBtn) sheetNextPageBtn.disabled = clamped>=totalPages-1;
+  };
   const sheetPrevPageBtn = document.getElementById('sheet-preview-prev-btn');
-  if(sheetPrevPageBtn) sheetPrevPageBtn.onclick = ()=>{ state.sheetPreviewPage = Math.max(0, (state.sheetPreviewPage||0)-1); render(); };
+  if(sheetPrevPageBtn) sheetPrevPageBtn.onclick = ()=>{ goToSheetPage((state.sheetPreviewPage||0)-1); };
   const sheetNextPageBtn = document.getElementById('sheet-preview-next-btn');
-  if(sheetNextPageBtn) sheetNextPageBtn.onclick = ()=>{ state.sheetPreviewPage = (state.sheetPreviewPage||0)+1; render(); };
+  if(sheetNextPageBtn) sheetNextPageBtn.onclick = ()=>{ goToSheetPage((state.sheetPreviewPage||0)+1); };
   const sheetZoomOutBtn = document.getElementById('sheet-zoom-out-btn');
-  if(sheetZoomOutBtn) sheetZoomOutBtn.onclick = ()=>{ state.sheetZoomAuto = false; state.sheetZoom = Math.max(30, (state.sheetZoom||70)-10); render(); };
+  if(sheetZoomOutBtn) sheetZoomOutBtn.onclick = ()=>{ state.sheetZoomAuto = false; applySheetZoom(Math.max(30, (state.sheetZoom||70)-10)); };
   const sheetZoomInBtn = document.getElementById('sheet-zoom-in-btn');
-  if(sheetZoomInBtn) sheetZoomInBtn.onclick = ()=>{ state.sheetZoomAuto = false; state.sheetZoom = Math.min(150, (state.sheetZoom||70)+10); render(); };
+  if(sheetZoomInBtn) sheetZoomInBtn.onclick = ()=>{ state.sheetZoomAuto = false; applySheetZoom(Math.min(150, (state.sheetZoom||70)+10)); };
   const sheetZoomResetBtn = document.getElementById('sheet-zoom-reset-btn');
   if(sheetZoomResetBtn) sheetZoomResetBtn.onclick = ()=>{
     state.sheetZoomAuto = true;
-    const fitZoom = computeFitZoom();
-    state.sheetZoom = fitZoom || 70;
-    render();
+    applySheetZoom(computeFitZoom() || 70);
   };
   // while auto-fit is on, keep recalculating against the actual rendered viewport — covers the
   // first visit, window resizes, and switching monitors/resolutions, without ever overriding a
   // manual +/-/ adjustment (which turns auto-fit off until Reset is pressed again)
   if(state.adminSubRoute==='sheet' && state.sheetZoomAuto && state.sheetPreviewModalOpen){
     const fitZoom = computeFitZoom();
-    if(fitZoom && fitZoom !== state.sheetZoom){
-      state.sheetZoom = fitZoom;
-      render();
-    }
+    if(fitZoom && fitZoom !== state.sheetZoom) applySheetZoom(fitZoom);
   }
   const openSheetSettingsBtn = document.getElementById('open-sheet-settings-btn');
   if(openSheetSettingsBtn) openSheetSettingsBtn.onclick = ()=>{ state.sheetSettingsModalOpen = true; state.err=''; render(); };
