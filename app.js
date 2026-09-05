@@ -2664,14 +2664,23 @@ function attachAdminHandlers(){
       DB.attendance = await fetchKey('attendance', DB.attendance);
       const ev = DB.events.find(e=>e.id===eventId);
       if(ev){
-        if(!state.sheetDraft.title) state.sheetDraft.title = ev.name;
-        if(!state.sheetDraft.date && ev.date) state.sheetDraft.date = formatDateLong(ev.date);
-        if(!state.sheetDraft.venue && ev.venue) state.sheetDraft.venue = ev.venue;
+        // switching events replaces these fields entirely — leftover details from a
+        // previously-selected event should never carry over to one that has none
+        state.sheetDraft.title = ev.name || '';
+        state.sheetDraft.date = ev.date ? formatDateLong(ev.date) : '';
+        state.sheetDraft.venue = ev.venue || '';
         const isWholeDay = (ev.sessionType||'full')==='full';
-        state.sheetDraft.session = isWholeDay ? (state.sheetDraft.session || 'am') : null;
-        const relevantTime = ev.sessionType==='pm' ? ev.pmTime : (isWholeDay ? (state.sheetDraft.session==='pm' ? ev.pmTime : ev.amTime) : ev.amTime);
-        if(!state.sheetDraft.time && relevantTime) state.sheetDraft.time = relevantTime;
+        state.sheetDraft.session = isWholeDay ? 'am' : null;
+        const relevantTime = ev.sessionType==='pm' ? ev.pmTime : (isWholeDay ? ev.amTime : ev.amTime);
+        state.sheetDraft.time = relevantTime || '';
       }
+    } else {
+      // "None — blank sheet" clears event-derived fields too, so nothing lingers
+      state.sheetDraft.title = '';
+      state.sheetDraft.date = '';
+      state.sheetDraft.venue = '';
+      state.sheetDraft.time = '';
+      state.sheetDraft.session = null;
     }
     render();
   };
@@ -2682,7 +2691,7 @@ function attachAdminHandlers(){
     const ev = DB.events.find(e=>e.id===state.sheetDraft.eventId);
     if(ev){
       const relevantTime = state.sheetDraft.session==='pm' ? ev.pmTime : ev.amTime;
-      if(relevantTime) state.sheetDraft.time = relevantTime; // switching session updates the shown time to match
+      state.sheetDraft.time = relevantTime || ''; // switching session updates the shown time to match, clearing it if that session has none set
     }
     render();
   };

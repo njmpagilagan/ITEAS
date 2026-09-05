@@ -461,7 +461,7 @@
        neither is valid for printing, so force it back to plain block flow either way, letting
        the rules below take over positioning for the actual print output */
     .sheet-preview-overlay{ display:block !important; position:static !important; background:none !important; padding:0 !important; inset:auto !important; }
-    .sheet-preview-card{ max-width:none !important; max-height:none !important; overflow:visible !important; padding:0 !important; background:none !important; box-shadow:none !important; }
+    .sheet-preview-card{ position:static !important; max-width:none !important; max-height:none !important; overflow:visible !important; padding:0 !important; background:none !important; box-shadow:none !important; }
     .sheet-preview-viewport{ max-height:none !important; padding:0 !important; background:none !important; }
     .print-sheet-container{ position:absolute; top:0; left:0; width:8.5in; zoom:100% !important; }
     .print-sheet{
