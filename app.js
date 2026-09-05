@@ -1671,9 +1671,12 @@ function renderAdminStudents(){
       <button class="section-tab ${sectionFilter==='all'?'active':''}" data-student-section="all">All sections</button>
       ${sectionsForDept.map(sec=>`<button class="section-tab ${normSection(sectionFilter)===normSection(sec)?'active':''}" data-student-section="${sec}">${sec}</button>`).join('')}
     </div>` : ''}
-    <div class="field student-search-field">
-      <label>Search ${deptFilter==='all'?'all departments':'in ' + deptFilter}</label>
-      <input id="student-search" value="${state.studentSearchQuery||''}" placeholder="Name or student ID">
+    <div class="row" style="align-items:flex-end;">
+      <div class="field student-search-field" style="margin-bottom:0; flex:1;">
+        <label>Search ${deptFilter==='all'?'all departments':'in ' + deptFilter}</label>
+        <input id="student-search" value="${state.studentSearchQuery||''}" placeholder="Name or student ID">
+      </div>
+      <button class="btn-gold" id="normalize-student-names-btn" style="flex-shrink:0;">Normalize names to Title Case</button>
     </div>
   </div>
   <div class="section-title">${deptFilter==='all' ? 'All students' : (sectionFilter==='all' ? deptFilter : `${deptFilter} — ${sectionFilter}`)} <span class="pill gold">${students.length}</span></div>
@@ -1785,9 +1788,12 @@ function renderAdminOfficers(){
       ${sectionsForOfficerDept.map(sec=>`<button class="section-tab ${normSection(officerSectionFilter)===normSection(sec)?'active':''}" data-officer-section="${sec}">${sec}</button>`).join('')}
     </div>` : ''}
     ` : ''}
-    <div class="field student-search-field">
-      <label>Search</label>
-      <input id="officer-search" value="${state.officerSearchQuery||''}" placeholder="Name or username">
+    <div class="row" style="align-items:flex-end;">
+      <div class="field student-search-field" style="margin-bottom:0; flex:1;">
+        <label>Search</label>
+        <input id="officer-search" value="${state.officerSearchQuery||''}" placeholder="Name or username">
+      </div>
+      <button class="btn-gold" id="normalize-officer-names-btn" style="flex-shrink:0;">Normalize names to Title Case</button>
     </div>
   </div>
   <div class="section-title">${typeFilter==='all' ? 'All officers' : (officerDeptFilter==='all' ? scopeLabel(typeFilter) : (officerSectionFilter==='all' ? officerDeptFilter : `${officerDeptFilter} — ${officerSectionFilter}`))} <span class="pill gold">${filtered.length}</span></div>
@@ -2364,6 +2370,24 @@ function attachAdminHandlers(){
   });
   const dismissOfficerReset = document.getElementById('dismiss-officer-reset-btn');
   if(dismissOfficerReset) dismissOfficerReset.onclick = ()=>{ state.lastOfficerResetPassword=null; render(); };
+  const normalizeOfficerNamesBtn = document.getElementById('normalize-officer-names-btn');
+  if(normalizeOfficerNamesBtn) normalizeOfficerNamesBtn.onclick = async ()=>{
+    if(!confirm('Rewrite every officer\'s name to Title Case (e.g., "JUAN DELA CRUZ" → "Juan Dela Cruz")? This updates all officer and SSG accounts system-wide, not just the ones currently shown.')) return;
+    DB.users = await fetchKey('users', DB.users);
+    let changed = 0;
+    Object.values(DB.users).forEach(u=>{
+      if(u.role==='officer' || u.role==='ssg'){
+        const fixed = toTitleCase(u.name);
+        if(fixed !== u.name){ u.name = fixed; changed++; }
+      }
+    });
+    if(changed>0){
+      await saveKey('users', DB.users);
+      await logAdminAction('Normalized officer names to Title Case', `${changed} name(s) updated`);
+    }
+    alert(`${changed} officer name${changed===1?'':'s'} updated.`);
+    render();
+  };
   const copyOfficerResetBtn = document.getElementById('copy-officer-reset-pw-btn');
   if(copyOfficerResetBtn) copyOfficerResetBtn.onclick = async ()=>{
     try{
@@ -2559,6 +2583,24 @@ function attachAdminHandlers(){
   });
   const dismissReset = document.getElementById('dismiss-reset-btn');
   if(dismissReset) dismissReset.onclick = ()=>{ state.lastResetPassword=null; render(); };
+  const normalizeStudentNamesBtn = document.getElementById('normalize-student-names-btn');
+  if(normalizeStudentNamesBtn) normalizeStudentNamesBtn.onclick = async ()=>{
+    if(!confirm('Rewrite every student\'s name to Title Case (e.g., "JUAN DELA CRUZ" → "Juan Dela Cruz")? This updates all student accounts system-wide, not just the ones currently shown.')) return;
+    DB.users = await fetchKey('users', DB.users);
+    let changed = 0;
+    Object.values(DB.users).forEach(u=>{
+      if(u.role==='student'){
+        const fixed = toTitleCase(u.name);
+        if(fixed !== u.name){ u.name = fixed; changed++; }
+      }
+    });
+    if(changed>0){
+      await saveKey('users', DB.users);
+      await logAdminAction('Normalized student names to Title Case', `${changed} name(s) updated`);
+    }
+    alert(`${changed} student name${changed===1?'':'s'} updated.`);
+    render();
+  };
   const copyResetBtn = document.getElementById('copy-reset-pw-btn');
   if(copyResetBtn) copyResetBtn.onclick = async ()=>{
     try{
