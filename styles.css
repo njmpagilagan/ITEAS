@@ -415,7 +415,9 @@
     box-sizing:border-box;
     box-shadow:0 4px 20px rgba(0,0,0,0.15);
     border:1px solid #d9d9d9;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact; /* forces background-color elements (like the divider bars below) to actually print, since browsers silently drop them by default unless "Background graphics" is manually checked */
   }
+  .print-sheet *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   .ps-topline{display:flex; justify-content:space-between; font-size:10px; margin-bottom:14px; gap:12px;}
   .ps-header{position:relative; min-height:60px; padding:0 8px;}
   .ps-logo{position:absolute; top:50%; transform:translateY(-50%); display:flex; align-items:center; justify-content:center; z-index:2;}
@@ -444,6 +446,7 @@
   .ps-fill.short{min-width:150px;}
   .ps-table{width:100%; border-collapse:collapse; margin-top:8px;}
   .ps-table th, .ps-table td{border:1px solid #000; padding:6px 8px; font-size:12px; text-align:left; height:26px;}
+  .ps-table tr:last-child td{border-bottom:1px solid #000;} /* overrides the global rule that strips the last row's bottom border on regular app tables — every row here needs a full border, including the last */
   .ps-table th{font-weight:700; text-align:center;}
   .ps-footer{margin-top:28px; font-size:13px;}
   .ps-footer-row{display:block;}
