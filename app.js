@@ -268,9 +268,12 @@ let state = {
   editingStudentId:null,
   studentSearch:'',
   studentDeptFilter:'all',
+  studentSectionFilter:'all',
   studentSearchQuery:'',
   studentPage:1,
   officerTypeFilter:'all',
+  officerDeptFilter:'all',
+  officerSectionFilter:'all',
   officerModalOpen:false,
   officerPage:1,
   officerSearchQuery:'',
@@ -1619,7 +1622,10 @@ function renderAdminDepartments(){
 function renderAdminStudents(){
   const allStudents = Object.values(DB.users).filter(u=>u.role==='student').sort((a,b)=>a.name.localeCompare(b.name));
   const deptFilter = state.studentDeptFilter || 'all';
+  const sectionFilter = state.studentSectionFilter || 'all';
   let students = deptFilter==='all' ? allStudents : allStudents.filter(s=>s.department===deptFilter);
+  if(deptFilter!=='all' && sectionFilter!=='all') students = students.filter(s=>normSection(s.section)===normSection(sectionFilter));
+  const sectionsForDept = deptFilter!=='all' ? (DB.sections[deptFilter]||[]) : [];
   const q = (state.studentSearchQuery||'').trim().toLowerCase();
   if(q) students = students.filter(s=>(s.name+' '+s.id).toLowerCase().includes(q));
   const editing = state.editingStudentId;
@@ -1660,12 +1666,17 @@ function renderAdminStudents(){
         return `<button class="dept-chip ${deptFilter===dep?'active':''}" data-dept="${dep}">${dep} <span class="chip-count">${count}</span></button>`;
       }).join('')}
     </div>
+    ${sectionsForDept.length>0 ? `
+    <div class="section-tab-row">
+      <button class="section-tab ${sectionFilter==='all'?'active':''}" data-student-section="all">All sections</button>
+      ${sectionsForDept.map(sec=>`<button class="section-tab ${normSection(sectionFilter)===normSection(sec)?'active':''}" data-student-section="${sec}">${sec}</button>`).join('')}
+    </div>` : ''}
     <div class="field student-search-field">
       <label>Search ${deptFilter==='all'?'all departments':'in ' + deptFilter}</label>
       <input id="student-search" value="${state.studentSearchQuery||''}" placeholder="Name or student ID">
     </div>
   </div>
-  <div class="section-title">${deptFilter==='all' ? 'All students' : deptFilter} <span class="pill gold">${students.length}</span></div>
+  <div class="section-title">${deptFilter==='all' ? 'All students' : (sectionFilter==='all' ? deptFilter : `${deptFilter} — ${sectionFilter}`)} <span class="pill gold">${students.length}</span></div>
   <div class="card" style="padding:0;">
     <table id="student-table">
       <tr><th>Name</th><th>ID</th><th style="width:50px;">Sex</th><th>Department</th><th>Section</th><th></th></tr>
@@ -1722,7 +1733,14 @@ function renderAdminOfficers(){
   const allOfficers = Object.values(DB.users).filter(u=>u.role==='officer' || u.role==='ssg');
   const typedOfficers = allOfficers.map(o=>({...o, oType: o.role==='ssg' ? 'ssg' : (o.section ? 'section' : 'department')}));
   const typeFilter = state.officerTypeFilter || 'all';
+  const officerDeptFilter = state.officerDeptFilter || 'all';
+  const officerSectionFilter = state.officerSectionFilter || 'all';
   let filtered = typeFilter==='all' ? typedOfficers : typedOfficers.filter(o=>o.oType===typeFilter);
+  const sectionsForOfficerDept = (typeFilter==='section' && officerDeptFilter!=='all') ? (DB.sections[officerDeptFilter]||[]) : [];
+  if(typeFilter==='section'){
+    if(officerDeptFilter!=='all') filtered = filtered.filter(o=>o.department===officerDeptFilter);
+    if(officerDeptFilter!=='all' && officerSectionFilter!=='all') filtered = filtered.filter(o=>normSection(o.section)===normSection(officerSectionFilter));
+  }
   const q = (state.officerSearchQuery||'').trim().toLowerCase();
   if(q) filtered = filtered.filter(o=>(o.name+' '+o.username).toLowerCase().includes(q));
   const countFor = t => t==='all' ? typedOfficers.length : typedOfficers.filter(o=>o.oType===t).length;
@@ -1753,12 +1771,26 @@ function renderAdminOfficers(){
       <button class="officer-type-filter-btn dept-chip ${typeFilter==='department'?'active':''}" data-type="department">Department <span class="chip-count">${countFor('department')}</span></button>
       <button class="officer-type-filter-btn dept-chip ${typeFilter==='ssg'?'active':''}" data-type="ssg">SSG <span class="chip-count">${countFor('ssg')}</span></button>
     </div>
+    ${typeFilter==='section' ? `
+    <div class="field" style="max-width:260px;">
+      <label>Department</label>
+      <select id="officer-dept-filter">
+        <option value="all" ${officerDeptFilter==='all'?'selected':''}>All departments</option>
+        ${DB.departments.map(dep=>`<option ${officerDeptFilter===dep?'selected':''}>${dep}</option>`).join('')}
+      </select>
+    </div>
+    ${sectionsForOfficerDept.length>0 ? `
+    <div class="section-tab-row">
+      <button class="section-tab ${officerSectionFilter==='all'?'active':''}" data-officer-section="all">All sections</button>
+      ${sectionsForOfficerDept.map(sec=>`<button class="section-tab ${normSection(officerSectionFilter)===normSection(sec)?'active':''}" data-officer-section="${sec}">${sec}</button>`).join('')}
+    </div>` : ''}
+    ` : ''}
     <div class="field student-search-field">
       <label>Search</label>
       <input id="officer-search" value="${state.officerSearchQuery||''}" placeholder="Name or username">
     </div>
   </div>
-  <div class="section-title">${typeFilter==='all' ? 'All officers' : scopeLabel(typeFilter)} <span class="pill gold">${filtered.length}</span></div>
+  <div class="section-title">${typeFilter==='all' ? 'All officers' : (officerDeptFilter==='all' ? scopeLabel(typeFilter) : (officerSectionFilter==='all' ? officerDeptFilter : `${officerDeptFilter} — ${officerSectionFilter}`))} <span class="pill gold">${filtered.length}</span></div>
   <div class="card" style="padding:0;">
     <table id="officer-table">
       <tr><th>Name</th><th>Username</th><th>Type</th><th>Department</th><th>Section</th><th></th></tr>
@@ -2345,6 +2377,22 @@ function attachAdminHandlers(){
   document.querySelectorAll('.officer-type-filter-btn').forEach(el=>{
     el.onclick = ()=>{
       state.officerTypeFilter = el.dataset.type;
+      state.officerDeptFilter = 'all';
+      state.officerSectionFilter = 'all';
+      state.officerPage = 1;
+      render();
+    };
+  });
+  const officerDeptFilterEl = document.getElementById('officer-dept-filter');
+  if(officerDeptFilterEl) officerDeptFilterEl.onchange = ()=>{
+    state.officerDeptFilter = officerDeptFilterEl.value;
+    state.officerSectionFilter = 'all';
+    state.officerPage = 1;
+    render();
+  };
+  document.querySelectorAll('[data-officer-section]').forEach(el=>{
+    el.onclick = ()=>{
+      state.officerSectionFilter = el.dataset.officerSection;
       state.officerPage = 1;
       render();
     };
@@ -2365,7 +2413,7 @@ function attachAdminHandlers(){
   if(fd) fd.onchange = ()=>{ state.adminFilterDept = fd.value; state.adminFilterSection = 'all'; state.recordsPage = 1; render(); };
   const fs = document.getElementById('filter-scope');
   if(fs) fs.onchange = ()=>{ state.adminFilterScope = fs.value; state.recordsPage = 1; render(); };
-  document.querySelectorAll('.section-tab').forEach(el=>{
+  document.querySelectorAll('[data-section]').forEach(el=>{
     el.onclick = ()=>{ state.adminFilterSection = el.dataset.section; state.recordsPage = 1; render(); };
   });
   document.querySelectorAll('[data-show-attendance]').forEach(el=>{
@@ -2446,6 +2494,14 @@ function attachAdminHandlers(){
   document.querySelectorAll('.dept-chip:not(.officer-type-filter-btn)').forEach(el=>{
     el.onclick = ()=>{
       state.studentDeptFilter = el.dataset.dept;
+      state.studentSectionFilter = 'all';
+      state.studentPage = 1;
+      render();
+    };
+  });
+  document.querySelectorAll('[data-student-section]').forEach(el=>{
+    el.onclick = ()=>{
+      state.studentSectionFilter = el.dataset.studentSection;
       state.studentPage = 1;
       render();
     };
