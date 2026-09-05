@@ -13,13 +13,14 @@
     --radius:10px;
   }
   *{box-sizing:border-box;}
+  html{height:100%; margin:0; overflow:hidden;}
   body{
     margin:0;
     background:var(--bg);
     color:var(--ink);
     font-family:'Inter',sans-serif;
     -webkit-font-smoothing:antialiased;
-    height:100vh;
+    height:100%;
     overflow:hidden;
   }
   h1,h2,h3,.display{
@@ -390,6 +391,7 @@
   .chip-x:hover{background:var(--danger); color:#fff;}
   ::placeholder{color:#a9afb9;}
   @media (max-width:760px){
+    html{height:auto; overflow:visible;}
     body{height:auto; overflow:visible;}
     #app{height:auto; overflow:visible;}
     .shell{flex-direction:column; height:auto;}
