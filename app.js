@@ -21,16 +21,25 @@ try{
 /* ---------------- storage helpers ---------------- */
 const EMPTY_DEFAULTS = { users:{}, events:[], tokens:{}, attendance:[], departments:[], sections:{}, adminLog:[], sheetSettings:null };
 async function loadAll(){
-  if(!SUPABASE_CONFIGURED) return { ...EMPTY_DEFAULTS };
-  const out = { ...EMPTY_DEFAULTS };
-  try{
-    const { data, error } = await sb.from('app_storage').select('key,value');
-    if(error) throw error;
-    (data||[]).forEach(row=>{ out[row.key] = row.value; });
-  }catch(e){
-    console.error('Failed to load from Supabase — check SUPABASE_URL/SUPABASE_ANON_KEY and table setup.', e);
+  if(!SUPABASE_CONFIGURED) return { ...EMPTY_DEFAULTS, __loadOk:true };
+  // retries a few times before giving up — a single transient network/auth blip should
+  // never be treated the same as "the database is genuinely empty"
+  let lastError = null;
+  for(let attempt=0; attempt<3; attempt++){
+    try{
+      const { data, error } = await sb.from('app_storage').select('key,value');
+      if(error) throw error;
+      const out = { ...EMPTY_DEFAULTS };
+      (data||[]).forEach(row=>{ out[row.key] = row.value; });
+      out.__loadOk = true;
+      return out;
+    }catch(e){
+      lastError = e;
+      if(attempt < 2) await new Promise(r=>setTimeout(r, 800));
+    }
   }
-  return out;
+  console.error('Failed to load from Supabase after retries — check SUPABASE_URL/SUPABASE_ANON_KEY, table setup, and network connection.', lastError);
+  return { ...EMPTY_DEFAULTS, __loadOk:false };
 }
 async function saveKey(key, value){
   if(!SUPABASE_CONFIGURED) return;
@@ -59,7 +68,7 @@ let serverTimeOffsetMs = 0;
 async function syncServerTimeOffset(){
   if(!SUPABASE_CONFIGURED) return;
   try{
-    const res = await fetch(SUPABASE_URL + '/rest/v1/', { method:'HEAD', headers:{ apikey: SUPABASE_ANON_KEY } });
+    const res = await fetch(SUPABASE_URL + '/rest/v1/', { method:'HEAD', headers:{ apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + SUPABASE_ANON_KEY } });
     const dateHeader = res.headers.get('date');
     if(dateHeader){
       const serverTime = new Date(dateHeader).getTime();
@@ -284,11 +293,30 @@ let state = {
   exportModalOpen:false,
   attendeesPage:1,
   lastResetPassword:null,
+  recoveredStudents:null,
   lastOfficerResetPassword:null
 };
 
 async function seedIfEmpty(){
   DB = await loadAll();
+  // CRITICAL: if the load itself failed (network/auth issue), an "empty" result does NOT
+  // mean the database is actually empty — it means we couldn't reach it. Writing fresh
+  // defaults in that case would overwrite real data with blanks, which is exactly what
+  // happened before this fix. Refuse to seed or save anything and surface the problem instead.
+  if(DB.__loadOk === false){
+    document.getElementById('app').innerHTML = `
+      <div class="center-screen">
+        <div class="auth-shell">
+          <div class="card" style="border-color:var(--danger);">
+            <h2 style="margin-top:0; color:var(--danger);">Couldn't connect to the database</h2>
+            <p>Nothing has been changed or overwritten — the app stopped here on purpose rather than risk touching your data while it can't confirm what's actually there.</p>
+            <p>Please check your internet connection, then reload this page. If this keeps happening, check that your Supabase project is active and the API key in the app hasn't changed.</p>
+            <button class="btn-primary" style="width:100%; margin-top:10px;" onclick="window.location.reload()">Reload</button>
+          </div>
+        </div>
+      </div>`;
+    throw new Error('Supabase load failed — halting startup to avoid overwriting data.');
+  }
   if(!DB.sections) DB.sections = {};
   let usersChanged = false, deptsChanged = false;
   if(!DB.users['sas-admin']){
@@ -1642,8 +1670,23 @@ function renderAdminStudents(){
   const editingUser = editing ? DB.users[editing] : null;
   const reset = state.lastResetPassword;
   const { items: pageStudents, totalPages, page } = paginate(students, state.studentPage, getAutoPageSize('students', 460));
+  // students who have at least one attendance record but no account — recoverable from history
+  const knownIds = new Set(Object.keys(DB.users));
+  const missingCount = new Set(DB.attendance.filter(a=>!knownIds.has(a.studentId)).map(a=>a.studentId)).size;
   return `
-  <div class="page-head"><h1>Manage Students</h1><p>Update account details or reset a student's password.</p></div>
+  <div class="page-head-row">
+    <div class="page-head" style="margin-bottom:0;"><h1>Manage Students</h1><p>Update account details or reset a student's password.</p></div>
+    ${missingCount>0 ? `<button class="btn-danger" id="recover-students-btn">Recover ${missingCount} student${missingCount===1?'':'s'} from attendance history</button>` : ''}
+  </div>
+  ${state.recoveredStudents ? `
+    <div class="card" style="max-width:640px; margin-bottom:14px; border-color:var(--accent);">
+      <div class="pill gold" style="margin-bottom:10px;">Recovered ${state.recoveredStudents.length} student account${state.recoveredStudents.length===1?'':'s'}</div>
+      <p style="font-size:13.5px;">Each got a fresh temporary password (their original one could not be recovered). Copy this list now — it won't be shown again after you leave this page.</p>
+      <textarea id="recovered-students-textarea" readonly rows="8" style="width:100%; font-family:'JetBrains Mono',monospace; font-size:12px; padding:10px; border-radius:8px; border:1px solid var(--border);">${['Student ID\tName\tDepartment\tSection\tTemporary Password', ...state.recoveredStudents.map(s=>`${s.id}\t${s.name}\t${s.department}\t${s.section}\t${s.tempPassword}`)].join('\n')}</textarea>
+      <button class="btn-primary" style="width:100%; margin-top:10px;" id="copy-recovered-btn">Copy to clipboard</button>
+      <button class="btn-ghost" style="width:100%; margin-top:8px;" id="dismiss-recovered-btn">Dismiss</button>
+    </div>
+  ` : ''}
   ${reset ? `
     <div class="card" style="max-width:480px; margin-bottom:10px; border-color:var(--accent);">
       <div class="pill gold" style="margin-bottom:10px;">Password reset</div>
@@ -2355,6 +2398,49 @@ function attachAdminHandlers(){
   });
   const dismissReset = document.getElementById('dismiss-reset-btn');
   if(dismissReset) dismissReset.onclick = ()=>{ state.lastResetPassword=null; render(); };
+  const recoverStudentsBtn = document.getElementById('recover-students-btn');
+  if(recoverStudentsBtn) recoverStudentsBtn.onclick = async ()=>{
+    DB.users = await fetchKey('users', DB.users);
+    DB.attendance = await fetchKey('attendance', DB.attendance);
+    const knownIds = new Set(Object.keys(DB.users));
+    // rebuild a best-guess profile per missing student from their most recent attendance
+    // record — this recovers name/department/section, but never passwords or sex, since
+    // those were never stored on the attendance record itself
+    const byStudent = {};
+    DB.attendance.forEach(a=>{
+      if(knownIds.has(a.studentId)) return;
+      const latest = Math.max(a.amTimeIn||0, a.pmTimeIn||0);
+      if(!byStudent[a.studentId] || latest > byStudent[a.studentId]._latest){
+        byStudent[a.studentId] = { id:a.studentId, name:toTitleCase(a.studentName), department:a.department, section:a.section, _latest:latest };
+      }
+    });
+    const missing = Object.values(byStudent);
+    if(missing.length===0){ alert('No missing students found — nothing to recover.'); render(); return; }
+    if(!confirm(`Recreate ${missing.length} student account${missing.length===1?'':'s'} from attendance history? Each will get a fresh temporary password since the originals can\'t be recovered. This does not affect any account that still exists.`)) return;
+    const recovered = missing.map(m=>{
+      const tempPassword = generateTempPassword();
+      DB.users[m.id] = { id:m.id, role:'student', name:m.name, sex:'', department:m.department, section:m.section, passwordHash:hashPw(tempPassword) };
+      return { id:m.id, name:m.name, department:m.department, section:m.section, tempPassword };
+    });
+    await saveKey('users', DB.users);
+    await logAdminAction('Recovered students from attendance history', `${recovered.length} account(s) recreated`);
+    state.recoveredStudents = recovered;
+    render();
+  };
+  const dismissRecovered = document.getElementById('dismiss-recovered-btn');
+  if(dismissRecovered) dismissRecovered.onclick = ()=>{ state.recoveredStudents = null; render(); };
+  const copyRecoveredBtn = document.getElementById('copy-recovered-btn');
+  if(copyRecoveredBtn) copyRecoveredBtn.onclick = async ()=>{
+    const ta = document.getElementById('recovered-students-textarea');
+    try{
+      await navigator.clipboard.writeText(ta.value);
+      copyRecoveredBtn.textContent = 'Copied!';
+      setTimeout(()=>{ copyRecoveredBtn.textContent = 'Copy to clipboard'; }, 1500);
+    }catch(e){
+      ta.select();
+      copyRecoveredBtn.textContent = 'Select the text above and copy manually';
+    }
+  };
   const copyResetBtn = document.getElementById('copy-reset-pw-btn');
   if(copyResetBtn) copyResetBtn.onclick = async ()=>{
     try{
