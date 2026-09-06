@@ -317,10 +317,10 @@ function sectionOptions(dept, selected){
 function render(){
   const app = document.getElementById('app');
   if(state.route==='login'){ app.innerHTML = renderLogin(); attachLoginHandlers(); return; }
-  if(state.route==='student'){ app.innerHTML = renderShell(renderStudent()); attachShellHandlers(); attachStudentHandlers(); autoFitMainContent(); return; }
-  if(state.route==='officer'){ app.innerHTML = renderShell(renderOfficer()); attachShellHandlers(); attachOfficerHandlers(); autoFitMainContent(); return; }
-  if(state.route==='ssg'){ app.innerHTML = renderShell(renderSsg()); attachShellHandlers(); attachSsgHandlers(); autoFitMainContent(); return; }
-  if(state.route==='admin'){ app.innerHTML = renderShell(renderAdmin()); attachShellHandlers(); attachAdminHandlers(); autoFitMainContent(); return; }
+  if(state.route==='student'){ app.innerHTML = renderShell(renderStudent()); attachShellHandlers(); attachStudentHandlers(); autoFitMainContent(); scheduleMainFitRecheck(); return; }
+  if(state.route==='officer'){ app.innerHTML = renderShell(renderOfficer()); attachShellHandlers(); attachOfficerHandlers(); autoFitMainContent(); scheduleMainFitRecheck(); return; }
+  if(state.route==='ssg'){ app.innerHTML = renderShell(renderSsg()); attachShellHandlers(); attachSsgHandlers(); autoFitMainContent(); scheduleMainFitRecheck(); return; }
+  if(state.route==='admin'){ app.innerHTML = renderShell(renderAdmin()); attachShellHandlers(); attachAdminHandlers(); autoFitMainContent(); scheduleMainFitRecheck(); return; }
 }
 /* shrinks the main content area just enough to avoid needing a scrollbar, as a safety net for
    whatever pagination and layout spacing don't already handle on their own. Auto-pagination
@@ -343,6 +343,18 @@ window.addEventListener('resize', ()=>{
   clearTimeout(mainFitResizeDebounce);
   mainFitResizeDebounce = setTimeout(autoFitMainContent, 200);
 });
+// fonts and any logo images can finish loading a moment AFTER a render already measured and
+// fit the content — if the page reflows taller once they arrive, nothing would otherwise
+// re-check it, so re-run the fit once fonts are ready and again after a short delay to catch
+// image loads too
+if(document.fonts && document.fonts.ready){
+  document.fonts.ready.then(()=>{ autoFitMainContent(); });
+}
+let mainFitSettleTimeout = null;
+function scheduleMainFitRecheck(){
+  clearTimeout(mainFitSettleTimeout);
+  mainFitSettleTimeout = setTimeout(autoFitMainContent, 350);
+}
 
 /* ---------------- LOGIN ---------------- */
 function pwField(id, label, placeholder){
