@@ -1601,7 +1601,7 @@ function renderAdminDepartments(){
   const deptInUse = new Set();
   DB.events.forEach(e=>e.departments.forEach(dp=>deptInUse.add(dp)));
   const sectionInUse = new Set(Object.values(DB.users).filter(u=>u.role==='student' || u.role==='officer').map(u=>normSection(u.section)));
-  const { items: pageDeps, totalPages, page } = paginate(deps, state.departmentsPage, 3);
+  const { items: pageDeps, totalPages, page } = paginate(deps, state.departmentsPage, 2);
   return `
   <div class="page-head"><h1>Departments</h1><p>Manage departments and the sections within each one — everything students and officers pick from.</p></div>
   <div class="card" style="max-width:440px; margin-bottom:16px;">
