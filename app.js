@@ -336,6 +336,16 @@ function autoFitMainContent(){
   if(available>0 && natural > available){
     const pct = Math.max(60, Math.floor((available / natural) * 100));
     main.style.zoom = pct + '%';
+    // even after shrinking as far as the floor allows, there may still be genuine leftover
+    // overflow — only then does scrolling need to be possible at all
+    const stillOverflows = (natural * (pct/100)) > available;
+    main.style.overflowY = stillOverflows ? 'auto' : 'hidden';
+  } else {
+    // content already fits with no shrinking needed — setting overflow-y to "auto" here would
+    // still make some browsers (Windows Chrome especially) reserve/draw an empty scrollbar
+    // track purely because the property is "auto" rather than "hidden", even with truly zero
+    // scrollable content, which is exactly the bug this was causing
+    main.style.overflowY = 'hidden';
   }
 }
 let mainFitResizeDebounce = null;

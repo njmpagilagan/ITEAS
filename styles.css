@@ -247,7 +247,7 @@
   .nav-item:hover{background:rgba(255,255,255,0.06); color:#fff;}
   .nav-item.active{background:rgba(212,162,76,0.18); color:var(--accent); box-shadow:inset 3px 0 0 var(--accent);}
   .who-name{margin-top:auto; padding-top:16px; border-top:1px solid rgba(255,255,255,0.12); font-size:12px; color:rgba(255,255,255,0.55);}
-  .main{flex:1; padding:24px 32px; max-width:1100px; min-width:0; height:100vh; overflow-y:auto;}
+  .main{flex:1; padding:24px 32px; max-width:1100px; min-width:0; height:100vh; overflow-y:hidden;}
   .page-head{margin-bottom:16px;}
   .page-head h1{font-size:22px; margin:0 0 3px 0;}
   .page-head p{margin:0; color:var(--ink-soft); font-size:13px;}
