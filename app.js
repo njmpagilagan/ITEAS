@@ -277,7 +277,6 @@ let state = {
   officerSectionFilter:'all',
   officerModalOpen:false,
   officerPage:1,
-  departmentsPage:1,
   officerSearchQuery:'',
   recordsShown:false,
   showAttendanceStudentId:null,
@@ -1601,36 +1600,34 @@ function renderAdminDepartments(){
   const deptInUse = new Set();
   DB.events.forEach(e=>e.departments.forEach(dp=>deptInUse.add(dp)));
   const sectionInUse = new Set(Object.values(DB.users).filter(u=>u.role==='student' || u.role==='officer').map(u=>normSection(u.section)));
-  const { items: pageDeps, totalPages, page } = paginate(deps, state.departmentsPage, 2);
   return `
   <div class="page-head"><h1>Departments</h1><p>Manage departments and the sections within each one — everything students and officers pick from.</p></div>
-  <div class="card" style="max-width:440px; margin-bottom:16px;">
-    <div class="field"><label>Add a department</label><input autocomplete="off" id="new-dept-name" placeholder="e.g. Maritime Department"></div>
+  <div class="card" style="max-width:440px; margin-bottom:12px; padding:14px;">
+    <div class="field" style="margin-bottom:8px;"><label>Add a department</label><input autocomplete="off" id="new-dept-name" placeholder="e.g. Maritime Department"></div>
     ${state.err ? `<div class="err">${state.err}</div>` : ''}
     <button class="btn-primary" style="width:100%;" id="add-dept-btn">Add department</button>
   </div>
-  <div class="section-title">All departments</div>
-  ${deps.length===0 ? `<div class="empty">No departments yet.</div>` : pageDeps.map(dept=>{
+  <div class="section-title" style="margin:10px 0 6px 0;">All departments</div>
+  ${deps.length===0 ? `<div class="empty">No departments yet.</div>` : `<div style="display:flex; flex-direction:column; gap:8px;">${deps.map(dept=>{
     const sections = sectionsFor(dept);
     return `
-    <div class="card" style="max-width:560px; margin-bottom:10px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-        <div style="font-weight:700; font-size:15px;">${dept} ${deptInUse.has(dept)?'<span class="pill gold" style="margin-left:6px;">in use</span>':''}</div>
-        <button class="btn-danger" data-del-dept="${dept}">Remove department</button>
+    <div class="card" style="max-width:560px; padding:12px 14px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <div style="font-weight:700; font-size:14px;">${dept} ${deptInUse.has(dept)?'<span class="pill gold" style="margin-left:6px;">in use</span>':''}</div>
+        <button class="btn-danger" data-del-dept="${dept}" style="padding:5px 10px; font-size:12px;">Remove department</button>
       </div>
-      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
-        ${sections.length ? sections.map(s=>`
+      ${sections.length ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">
+        ${sections.map(s=>`
           <span class="section-chip">${s} ${sectionInUse.has(normSection(s))?'<span class="pill gold" style="margin-left:4px;">in use</span>':''}
             <button class="chip-x" data-del-section-dept="${dept}" data-del-section-name="${s}" aria-label="Remove section">&times;</button>
-          </span>`).join('') : `<span class="hint" style="margin:0;">No sections yet for this department.</span>`}
-      </div>
+          </span>`).join('')}
+      </div>` : `<span class="hint" style="margin:0 0 8px 0; display:block;">No sections yet for this department.</span>`}
       <div class="row" style="gap:8px; margin-bottom:0;">
         <input autocomplete="off" class="add-section-input" data-dept="${dept}" placeholder="Add a section, e.g. BSCS 3-A" style="flex:1;">
-        <button class="btn-ghost add-section-btn" data-dept="${dept}" style="flex-shrink:0;">Add section</button>
+        <button class="btn-ghost add-section-btn" data-dept="${dept}" style="flex-shrink:0; padding:8px 14px;">Add section</button>
       </div>
     </div>`;
-  }).join('')}
-  ${paginationControls(page, totalPages, 'departments')}`;
+  }).join('')}</div>`}`;
 }
 function renderAdminStudents(){
   const allStudents = Object.values(DB.users).filter(u=>u.role==='student').sort((a,b)=>a.name.localeCompare(b.name));
@@ -2206,10 +2203,6 @@ function attachAdminHandlers(){
   if(officerPrevBtn) officerPrevBtn.onclick = ()=>{ state.officerPage = Math.max(1, (state.officerPage||1)-1); render(); };
   const officerNextBtn = document.getElementById('officer-next-btn');
   if(officerNextBtn) officerNextBtn.onclick = ()=>{ state.officerPage = (state.officerPage||1)+1; render(); };
-  const departmentsPrevBtn = document.getElementById('departments-prev-btn');
-  if(departmentsPrevBtn) departmentsPrevBtn.onclick = ()=>{ state.departmentsPage = Math.max(1, (state.departmentsPage||1)-1); render(); };
-  const departmentsNextBtn = document.getElementById('departments-next-btn');
-  if(departmentsNextBtn) departmentsNextBtn.onclick = ()=>{ state.departmentsPage = (state.departmentsPage||1)+1; render(); };
   const fe = document.getElementById('filter-event');
   if(fe) fe.onchange = async ()=>{ state.adminFilterEvent = fe.value; state.recordsPage = 1; DB.attendance = await fetchKey('attendance', DB.attendance); render(); };
   const fd = document.getElementById('filter-dept');
