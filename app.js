@@ -56,6 +56,30 @@ async function fetchKey(key, fallback){
     return data ? data.value : fallback;
   }catch(e){ console.error('Supabase fetch failed', key, e); return fallback; }
 }
+/* Student ID doubles as the actual internal key tying an account to its QR scans and
+   attendance history. Changing it isn't just editing a field — it's a rename that must be
+   propagated everywhere that ID is referenced, or the student's history would silently
+   disconnect from their account. Returns {ok:true} or {ok:false, error} — never throws. */
+async function renameStudentId(oldId, newId, updatedUserObj){
+  oldId = (oldId||'').trim(); newId = (newId||'').trim();
+  if(!newId) return { ok:false, error:'Student ID cannot be empty.' };
+  if(newId === oldId){
+    DB.users[oldId] = updatedUserObj;
+    await saveKey('users', DB.users);
+    return { ok:true };
+  }
+  DB.users = await fetchKey('users', DB.users);
+  DB.attendance = await fetchKey('attendance', DB.attendance);
+  if(DB.users[newId]){ return { ok:false, error:'That student ID is already in use by another account.' }; }
+  delete DB.users[oldId];
+  updatedUserObj.id = newId;
+  DB.users[newId] = updatedUserObj;
+  let attendanceTouched = false;
+  DB.attendance.forEach(a=>{ if(a.studentId === oldId){ a.studentId = newId; attendanceTouched = true; } });
+  await saveKey('users', DB.users);
+  if(attendanceTouched) await saveKey('attendance', DB.attendance);
+  return { ok:true };
+}
 
 /* ---------------- clock-skew correction ----------------
    QR expiry compares a timestamp created on one device (the officer's) against a check
@@ -450,19 +474,20 @@ function renderStudentAuth(){
       <a data-mode="register" class="${mode==='register'?'active':''}">Create account</a>
     </div>
     ${mode==='login' ? `
-      <div class="field"><label>Student ID</label><input autocomplete="off" id="s-id" placeholder="e.g. 2023-00451"></div>
+      <div class="field"><label>Student ID or Username</label><input autocomplete="off" id="s-id" placeholder="e.g. 2023-00451 or juandc"></div>
       ${pwField('s-pw', 'Password', '••••••••')}
       <button class="btn-primary" style="width:100%" id="student-login-btn">Log in</button>
     ` : `
       <div class="field"><label>Full name</label><input autocomplete="off" id="r-name" placeholder="Juan Dela Cruz"></div>
       <div class="field"><label>Student ID</label><input autocomplete="off" id="r-id" placeholder="e.g. 2023-00451"></div>
+      <div class="field"><label>Username</label><input autocomplete="off" id="r-username" placeholder="e.g. juandc"></div>
       <div class="field"><label>Sex</label><select id="r-sex"><option value="">Select</option><option value="M">Male</option><option value="F">Female</option></select></div>
       <div class="field"><label>Department</label><select id="r-dept">${DB.departments.map(dep=>`<option>${dep}</option>`).join('')}</select></div>
       <div class="field"><label>Section</label><select id="r-section">${sectionOptions(DB.departments[0], null)}</select></div>
       ${pwField('r-pw', 'Password', 'Create a password')}
       <button class="btn-primary" style="width:100%" id="student-register-btn">Create account</button>
     `}
-    <div class="hint">Your student ID doubles as your username. One account is used for every event this school year.</div>
+    <div class="hint">You can log in with either your Student ID or your Username — useful if you ever forget one of them. One account is used for every event this school year.</div>
   `;
 }
 function renderOfficerAuth(){
@@ -514,25 +539,32 @@ function attachLoginHandlers(){
   };
   const sLogin = document.getElementById('student-login-btn');
   if(sLogin) sLogin.onclick = async ()=>{
-    const id = document.getElementById('s-id').value.trim();
+    const idOrUsername = document.getElementById('s-id').value.trim();
     const pw = document.getElementById('s-pw').value;
     DB.users = await fetchKey('users', DB.users); // always check against the current account, not whatever loaded when this tab opened
-    const u = DB.users[id];
-    if(!u || u.role!=='student' || u.passwordHash!==hashPw(pw)){ state.err='Incorrect student ID or password.'; render(); return; }
+    // try a direct student-ID lookup first (the fast, common path), then fall back to
+    // searching by username for students who don't remember their ID
+    let u = DB.users[idOrUsername];
+    if(!u || u.role!=='student'){
+      u = Object.values(DB.users).find(cand=>cand.role==='student' && cand.username && cand.username.toLowerCase()===idOrUsername.toLowerCase());
+    }
+    if(!u || u.role!=='student' || u.passwordHash!==hashPw(pw)){ state.err='Incorrect student ID, username, or password.'; render(); return; }
     state.currentUser = u; state.route='student'; state.err=''; startBackgroundSync(); render();
   };
   const sReg = document.getElementById('student-register-btn');
   if(sReg) sReg.onclick = async ()=>{
     const name = document.getElementById('r-name').value.trim();
     const id = document.getElementById('r-id').value.trim();
+    const username = document.getElementById('r-username').value.trim();
     const sex = document.getElementById('r-sex').value;
     const section = document.getElementById('r-section').value.trim();
     const department = document.getElementById('r-dept').value;
     const pw = document.getElementById('r-pw').value;
-    if(!name || !id || !sex || !section || !department || !pw){ state.err='Please fill in every field — if Section only shows "No sections yet," ask the admin to add one for your department first.'; render(); return; }
+    if(!name || !id || !username || !sex || !section || !department || !pw){ state.err='Please fill in every field — if Section only shows "No sections yet," ask the admin to add one for your department first.'; render(); return; }
     DB.users = await fetchKey('users', DB.users);
     if(DB.users[id]){ state.err='An account with that student ID already exists.'; render(); return; }
-    DB.users[id] = {id, role:'student', name: toTitleCase(name), sex, section, department, passwordHash:hashPw(pw)};
+    if(Object.values(DB.users).some(u=>u.role==='student' && u.username && u.username.toLowerCase()===username.toLowerCase())){ state.err='That username is already taken — please choose another.'; render(); return; }
+    DB.users[id] = {id, role:'student', name: toTitleCase(name), username, sex, section, department, passwordHash:hashPw(pw)};
     await saveKey('users', DB.users);
     state.currentUser = DB.users[id]; state.route='student'; state.err=''; startBackgroundSync(); render();
   };
@@ -1342,11 +1374,12 @@ function renderProfile(){
   <div class="card" style="max-width:440px; margin-bottom:16px;">
     <div class="field"><label>Full name</label><input autocomplete="off" id="prof-name" value="${u.name}"></div>
     ${u.role==='student' ? `
-      <div class="field"><label>Student ID</label><input autocomplete="off" value="${u.id}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
+      <div class="field"><label>Student ID</label><input autocomplete="off" id="prof-student-id" value="${u.id}"></div>
+      <div class="field"><label>Username</label><input autocomplete="off" id="prof-username" value="${u.username||''}" placeholder="e.g. juandc"></div>
       <div class="field"><label>Sex</label><select id="prof-sex"><option value="">Select</option><option value="M" ${u.sex==='M'?'selected':''}>Male</option><option value="F" ${u.sex==='F'?'selected':''}>Female</option></select></div>
       <div class="field"><label>Department</label><select id="prof-dept">${DB.departments.map(dep=>`<option ${u.department===dep?'selected':''}>${dep}</option>`).join('')}</select></div>
       <div class="field"><label>Section</label><select id="prof-section">${sectionOptions(u.department, u.section)}</select></div>
-      <div class="hint" style="margin-top:-8px; margin-bottom:10px;">Only your own department and section's QR code will check you in.</div>
+      <div class="hint" style="margin-top:-8px; margin-bottom:10px;">Only your own department and section's QR code will check you in. Changing your Student ID keeps your full attendance history attached to the new one — nothing is lost.</div>
     ` : ''}
     ${u.role==='officer' ? `
       <div class="field"><label>Username</label><input autocomplete="off" value="${u.username}" disabled style="background:var(--bg); color:var(--ink-soft);"></div>
@@ -1392,6 +1425,23 @@ function attachProfileHandlers(){
       if(secEl) u.section = secEl.value;
       const sexEl = document.getElementById('prof-sex');
       if(sexEl) u.sex = sexEl.value;
+      const usernameEl = document.getElementById('prof-username');
+      if(usernameEl){
+        const newUsername = usernameEl.value.trim();
+        DB.users = await fetchKey('users', DB.users);
+        const taken = Object.values(DB.users).some(cand=>cand.role==='student' && cand.id!==u.id && cand.username && newUsername && cand.username.toLowerCase()===newUsername.toLowerCase());
+        if(taken){ state.err='That username is already taken — please choose another.'; state.profileMsg=''; render(); return; }
+        u.username = newUsername;
+      }
+      const idEl = document.getElementById('prof-student-id');
+      const newId = idEl ? idEl.value.trim() : u.id;
+      const result = await renameStudentId(u.id, newId, u);
+      if(!result.ok){ state.err = result.error; state.profileMsg=''; render(); return; }
+      state.currentUser = DB.users[newId];
+      state.profileMsg = 'saved';
+      state.err = '';
+      render();
+      return;
     }
     DB.users[u.id] = u;
     await saveKey('users', DB.users);
@@ -1676,7 +1726,10 @@ function renderAdminStudents(){
   return `
   <div class="page-head-row">
     <div class="page-head" style="margin-bottom:0;"><h1>Manage Students</h1><p>Update account details or reset a student's password.</p></div>
-    ${missingCount>0 ? `<button class="btn-danger" id="recover-students-btn">Recover ${missingCount} student${missingCount===1?'':'s'} from attendance history</button>` : ''}
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      ${missingCount>0 ? `<button class="btn-danger" id="recover-students-btn">Recover ${missingCount} student${missingCount===1?'':'s'} from attendance history</button>` : ''}
+      ${allStudents.length>0 ? `<button class="btn-danger" id="remove-all-students-btn">Remove all students (${allStudents.length})</button>` : ''}
+    </div>
   </div>
   ${state.recoveredStudents ? `
     <div class="card" style="max-width:640px; margin-bottom:14px; border-color:var(--accent);">
@@ -1703,9 +1756,12 @@ function renderAdminStudents(){
   <div class="card" style="max-width:480px; margin-bottom:16px;">
     <div class="pill gold" style="margin-bottom:10px;">Editing ${editingUser.id}</div>
     <div class="field"><label>Full name</label><input autocomplete="off" id="stu-edit-name" value="${editingUser.name}"></div>
+    <div class="field"><label>Student ID</label><input autocomplete="off" id="stu-edit-id" value="${editingUser.id}"></div>
+    <div class="field"><label>Username</label><input autocomplete="off" id="stu-edit-username" value="${editingUser.username||''}" placeholder="e.g. juandc"></div>
     <div class="field"><label>Sex</label><select id="stu-edit-sex"><option value="">Select</option><option value="M" ${editingUser.sex==='M'?'selected':''}>Male</option><option value="F" ${editingUser.sex==='F'?'selected':''}>Female</option></select></div>
     <div class="field"><label>Department</label><select id="stu-edit-dept">${DB.departments.map(dep=>`<option ${editingUser.department===dep?'selected':''}>${dep}</option>`).join('')}</select></div>
     <div class="field"><label>Section</label><select id="stu-edit-section">${sectionOptions(editingUser.department, editingUser.section)}</select></div>
+    <p class="hint" style="margin-top:-6px;">Changing Student ID moves this account's full attendance history to the new ID automatically.</p>
     ${state.err ? `<div class="err">${state.err}</div>` : ''}
     <button class="btn-primary" style="width:100%;" id="save-student-edit-btn">Save changes</button>
     <button class="btn-ghost" style="width:100%; margin-top:8px;" id="cancel-student-edit-btn">Cancel</button>
@@ -2367,14 +2423,18 @@ function attachAdminHandlers(){
     const u = DB.users[id];
     if(!u){ state.err='This student no longer exists.'; state.editingStudentId=null; render(); return; }
     const name = toTitleCase(document.getElementById('stu-edit-name').value.trim());
+    const newId = document.getElementById('stu-edit-id').value.trim();
+    const username = document.getElementById('stu-edit-username').value.trim();
     const sex = document.getElementById('stu-edit-sex').value;
     const department = document.getElementById('stu-edit-dept').value;
     const section = document.getElementById('stu-edit-section').value;
-    if(!name || !section){ state.err='Fill in every field.'; render(); return; }
-    u.name = name; u.sex = sex; u.department = department; u.section = section;
-    DB.users[id] = u;
-    await saveKey('users', DB.users);
-    await logAdminAction('Edited student', `${name} (${id})`);
+    if(!name || !newId || !section){ state.err='Fill in every field.'; render(); return; }
+    const usernameTaken = Object.values(DB.users).some(cand=>cand.role==='student' && cand.id!==id && cand.username && username && cand.username.toLowerCase()===username.toLowerCase());
+    if(usernameTaken){ state.err='That username is already taken by another student.'; render(); return; }
+    u.name = name; u.sex = sex; u.department = department; u.section = section; u.username = username;
+    const result = await renameStudentId(id, newId, u);
+    if(!result.ok){ state.err = result.error; render(); return; }
+    await logAdminAction('Edited student', `${name} (${newId})`);
     state.editingStudentId = null;
     state.err = '';
     render();
@@ -2398,6 +2458,21 @@ function attachAdminHandlers(){
   });
   const dismissReset = document.getElementById('dismiss-reset-btn');
   if(dismissReset) dismissReset.onclick = ()=>{ state.lastResetPassword=null; render(); };
+  const removeAllStudentsBtn = document.getElementById('remove-all-students-btn');
+  if(removeAllStudentsBtn) removeAllStudentsBtn.onclick = async ()=>{
+    DB.users = await fetchKey('users', DB.users);
+    const studentCount = Object.values(DB.users).filter(u=>u.role==='student').length;
+    if(studentCount===0){ alert('No student accounts remain — nothing to remove.'); render(); return; }
+    const confirmText = `Remove all ${studentCount} student account${studentCount===1?'':'s'}?\n\nThis deletes their login accounts only — event data, officer/admin accounts, and all attendance history stay untouched. If a student re-registers using the exact same Student ID they had before, their attendance history reconnects automatically.\n\nType REMOVE to confirm.`;
+    const typed = prompt(confirmText);
+    if(typed !== 'REMOVE') return;
+    Object.keys(DB.users).forEach(id=>{ if(DB.users[id].role==='student') delete DB.users[id]; });
+    await saveKey('users', DB.users);
+    await logAdminAction('Removed all student accounts', `${studentCount} account(s) deleted — attendance history preserved`);
+    state.recoveredStudents = null;
+    alert(`Removed ${studentCount} student account${studentCount===1?'':'s'}. Students can now register fresh accounts.`);
+    render();
+  };
   const recoverStudentsBtn = document.getElementById('recover-students-btn');
   if(recoverStudentsBtn) recoverStudentsBtn.onclick = async ()=>{
     DB.users = await fetchKey('users', DB.users);
@@ -2419,7 +2494,7 @@ function attachAdminHandlers(){
     if(!confirm(`Recreate ${missing.length} student account${missing.length===1?'':'s'} from attendance history? Each will get a fresh temporary password since the originals can\'t be recovered. This does not affect any account that still exists.`)) return;
     const recovered = missing.map(m=>{
       const tempPassword = generateTempPassword();
-      DB.users[m.id] = { id:m.id, role:'student', name:m.name, sex:'', department:m.department, section:m.section, passwordHash:hashPw(tempPassword) };
+      DB.users[m.id] = { id:m.id, role:'student', name:m.name, username:'', sex:'', department:m.department, section:m.section, passwordHash:hashPw(tempPassword) };
       return { id:m.id, name:m.name, department:m.department, section:m.section, tempPassword };
     });
     await saveKey('users', DB.users);
